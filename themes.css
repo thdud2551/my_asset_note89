@@ -1,0 +1,290 @@
+/* 공통 폰트 및 기본 레이아웃 */
+body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+.title-font { font-family: 'Jua', sans-serif; }
+
+/* =========================================
+   1. 파스텔 웜 (기본)
+   ========================================= */
+:root, [data-theme="pastel"] {
+    --bg-page: #F8F9FA;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F8F9FA;
+    --header-bg: linear-gradient(90deg, #FFF9DB 0%, #FFF0F3 50%, #FFF4E6 100%);
+    --header-border: #FFE8A1;
+    --title-color: #D97706;
+    --text-main: #333333;
+    --text-muted: #6B7280;
+    --border-base: #E5E7EB;
+
+    --box1-bg: #FFFDF5; --box1-border: #FFE066;
+    --box2-bg: #FFF9FA; --box2-border: #FFCCD5;
+    --box3-bg: #FFF9F5; --box3-border: #FFC09F;
+    --box4-bg: #F4FAFF; --box4-border: #A5D8FF;
+
+    --btn-primary-bg: #FFD43B; --btn-primary-hover: #FCC419; --btn-primary-text: #374151;
+    --btn-pink-bg: #FF8787; --btn-pink-hover: #FA5252; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #FF922B; --btn-orange-hover: #FD7E14; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #FBBF24; --tab-active-text: #111827;
+}
+
+/* =========================================
+   2. 모던 흑백
+   ========================================= */
+[data-theme="mono"] {
+    --bg-page: #F3F4F6;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F9FAFB;
+    --header-bg: #FFFFFF;
+    --header-border: #D1D5DB;
+    --title-color: #111827;
+    --text-main: #1F2937;
+    --text-muted: #6B7280;
+    --border-base: #D1D5DB;
+
+    --box1-bg: #FFFFFF; --box1-border: #D1D5DB;
+    --box2-bg: #FAFAFA; --box2-border: #D1D5DB;
+    --box3-bg: #FAFAFA; --box3-border: #D1D5DB;
+    --box4-bg: #FFFFFF; --box4-border: #D1D5DB;
+
+    --btn-primary-bg: #374151; --btn-primary-hover: #1F2937; --btn-primary-text: #FFFFFF;
+    --btn-pink-bg: #4B5563; --btn-pink-hover: #374151; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #6B7280; --btn-orange-hover: #4B5563; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #1F2937; --tab-active-text: #FFFFFF;
+}
+
+/* =========================================
+   3. 세이지 그린
+   ========================================= */
+[data-theme="sage"] {
+    --bg-page: #F4F7F4;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F2F6F2;
+    --header-bg: linear-gradient(90deg, #E9F3EC 0%, #F2F7F0 100%);
+    --header-border: #C3DEC9;
+    --title-color: #2F6B48;
+    --text-main: #26332B;
+    --text-muted: #5F7165;
+    --border-base: #D7E5DA;
+
+    --box1-bg: #F9FCF9; --box1-border: #B7D8C0;
+    --box2-bg: #FBFDFB; --box2-border: #CBE2D1;
+    --box3-bg: #F8FBF8; --box3-border: #C2DBC8;
+    --box4-bg: #F5FAF8; --box4-border: #B2D6CC;
+
+    --btn-primary-bg: #68A67D; --btn-primary-hover: #529168; --btn-primary-text: #FFFFFF;
+    --btn-pink-bg: #7A9E89; --btn-pink-hover: #628671; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #88A97C; --btn-orange-hover: #709364; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #5B9A72; --tab-active-text: #FFFFFF;
+}
+
+/* =========================================
+   4. 스카이 블루
+   ========================================= */
+[data-theme="sky"] {
+    --bg-page: #F2F7FC;
+    --bg-card: #FFFFFF;
+    --bg-subtle: #F0F6FC;
+    --header-bg: linear-gradient(90deg, #E7F3FF 0%, #F0F7FF 100%);
+    --header-border: #BDDDFC;
+    --title-color: #2563EB;
+    --text-main: #1E293B;
+    --text-muted: #64748B;
+    --border-base: #D4E4F7;
+
+    --box1-bg: #F8FBFF; --box1-border: #B3D4FC;
+    --box2-bg: #FAFCFF; --box2-border: #C7DFFE;
+    --box3-bg: #F7FAFF; --box3-border: #BDD7F8;
+    --box4-bg: #F5FAFF; --box4-border: #A5D1FA;
+
+    --btn-primary-bg: #60A5FA; --btn-primary-hover: #3B82F6; --btn-primary-text: #FFFFFF;
+    --btn-pink-bg: #638CEB; --btn-pink-hover: #4A74D9; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #5FA8D3; --btn-orange-hover: #4791BE; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #3B82F6; --tab-active-text: #FFFFFF;
+}
+
+/* =========================================
+   5. 소프트 다크
+   ========================================= */
+[data-theme="dark"] {
+    --bg-page: #181B20;
+    --bg-card: #22262E;
+    --bg-subtle: #2A2F3A;
+    --header-bg: #1E2229;
+    --header-border: #323846;
+    --title-color: #F3F4F6;
+    --text-main: #E5E7EB;
+    --text-muted: #9CA3AF;
+    --border-base: #343B48;
+
+    --box1-bg: #22262E; --box1-border: #3A4252;
+    --box2-bg: #22262E; --box2-border: #3A4252;
+    --box3-bg: #22262E; --box3-border: #3A4252;
+    --box4-bg: #22262E; --box4-border: #3A4252;
+
+    --btn-primary-bg: #D9A441; --btn-primary-hover: #C69232; --btn-primary-text: #111827;
+    --btn-pink-bg: #C96A76; --btn-pink-hover: #B85864; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #C87D4B; --btn-orange-hover: #B46B3B; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #E0AE4C; --tab-active-text: #111827;
+}
+
+/* 공통 컴포넌트 매핑 */
+.theme-header { background: var(--header-bg); border-bottom: 2px solid var(--header-border); }
+.theme-title { color: var(--title-color); }
+.box-psyduck { background-color: var(--box1-bg); border: 2px solid var(--box1-border); }
+.box-slowpoke { background-color: var(--box2-bg); border: 2px solid var(--box2-border); }
+.box-magikarp { background-color: var(--box3-bg); border: 2px solid var(--box3-border); }
+.box-aqua { background-color: var(--box4-bg); border: 2px solid var(--box4-border); }
+
+.btn-yellow { background-color: var(--btn-primary-bg); color: var(--btn-primary-text); font-weight: 700; }
+.btn-yellow:hover { background-color: var(--btn-primary-hover); }
+.btn-pink { background-color: var(--btn-pink-bg); color: var(--btn-pink-text); font-weight: 700; }
+.btn-pink:hover { background-color: var(--btn-pink-hover); }
+.btn-orange { background-color: var(--btn-orange-bg); color: var(--btn-orange-text); font-weight: 700; }
+.btn-orange:hover { background-color: var(--btn-orange-hover); }
+
+.main-tab-active {
+    background-color: var(--tab-active-bg) !important;
+    color: var(--tab-active-text) !important;
+}
+
+/* =========================================
+   소프트 다크 테마 세부 보정
+   ========================================= */
+[data-theme="dark"] .bg-white { background-color: #22262E !important; color: #E5E7EB; }
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-100 { background-color: #2B303B !important; color: #D1D5DB; }
+
+/* 큰 영역(패널·테이블 헤더)은 다크 톤 유지 */
+[data-theme="dark"] .bg-amber-50, [data-theme="dark"] .bg-amber-50\/50, [data-theme="dark"] .bg-amber-50\/60,
+[data-theme="dark"] .bg-pink-50, [data-theme="dark"] .bg-pink-50\/40, [data-theme="dark"] .bg-pink-50\/50,
+[data-theme="dark"] .bg-blue-50, [data-theme="dark"] .bg-blue-50\/60,
+[data-theme="dark"] .bg-purple-50, [data-theme="dark"] .bg-purple-50\/70,
+[data-theme="dark"] .bg-red-50 {
+    background-color: #282E3A !important;
+}
+[data-theme="dark"] .bg-amber-100, [data-theme="dark"] .bg-amber-100\/80,
+[data-theme="dark"] .bg-pink-100, [data-theme="dark"] .bg-pink-100\/70 {
+    background-color: #363D4E !important;
+}
+
+/* 기본 텍스트 및 테두리 보정 */
+[data-theme="dark"] .text-gray-800, [data-theme="dark"] .text-gray-900,
+[data-theme="dark"] .text-amber-900, [data-theme="dark"] .text-pink-900,
+[data-theme="dark"] .text-blue-900, [data-theme="dark"] .text-orange-900,
+[data-theme="dark"] .text-purple-900 { color: #F3F4F6 !important; }
+[data-theme="dark"] .text-gray-700, [data-theme="dark"] .text-gray-600 { color: #D1D5DB !important; }
+[data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-400 { color: #9CA3AF !important; }
+[data-theme="dark"] .border-gray-100, [data-theme="dark"] .border-gray-200, [data-theme="dark"] .border-gray-300,
+[data-theme="dark"] .border-amber-100, [data-theme="dark"] .border-amber-200,
+[data-theme="dark"] .border-pink-100, [data-theme="dark"] .border-pink-200,
+[data-theme="dark"] .border-blue-100, [data-theme="dark"] .border-blue-200,
+[data-theme="dark"] .border-purple-200, [data-theme="dark"] .border-orange-200 {
+    border-color: #353C4A !important;
+}
+[data-theme="dark"] input, [data-theme="dark"] select {
+    background-color: #1B1F27 !important;
+    color: #F3F4F6 !important;
+    border-color: #41495A !important;
+}
+[data-theme="dark"] .text-blue-600 { color: #7CB7FF !important; }
+[data-theme="dark"] .text-rose-500, [data-theme="dark"] .text-rose-600 { color: #FF8796 !important; }
+[data-theme="dark"] .text-purple-600 { color: #C09BFF !important; }
+
+/* 다크 모드 보조 버튼(오늘, 이번 달, 삭제 등) 가독성 보정 */
+[data-theme="dark"] button.bg-amber-50,
+[data-theme="dark"] button.bg-amber-100 { color: #FDE68A !important; }
+[data-theme="dark"] button.bg-pink-50 { color: #FBCFE8 !important; }
+[data-theme="dark"] button.bg-red-50 { color: #FCA5A5 !important; }
+[data-theme="dark"] button.bg-gray-100 { color: #E5E7EB !important; }
+
+/* 다크 모드 배지(수입형, 지출형, 이체형, 합계, 카드구분, 기념일 등) 밝은 바탕 + 고대비 글씨 */
+[data-theme="dark"] span.bg-rose-50,
+[data-theme="dark"] span.bg-rose-100 {
+    background-color: #FFF1F2 !important;
+    color: #BE123C !important;
+    border-color: #FECDD3 !important;
+}
+[data-theme="dark"] span.bg-blue-50,
+[data-theme="dark"] span.bg-blue-100 {
+    background-color: #EFF6FF !important;
+    color: #1D4ED8 !important;
+    border-color: #BFDBFE !important;
+}
+[data-theme="dark"] span.bg-purple-50,
+[data-theme="dark"] span.bg-purple-100 {
+    background-color: #F5F3FF !important;
+    color: #6D28D9 !important;
+    border-color: #DDD6FE !important;
+}
+[data-theme="dark"] span.bg-amber-50,
+[data-theme="dark"] span.bg-amber-100,
+[data-theme="dark"] span.bg-amber-300 {
+    background-color: #FFFBEB !important;
+    color: #B45309 !important;
+    border-color: #FDE68A !important;
+}
+[data-theme="dark"] span.bg-pink-50,
+[data-theme="dark"] span.bg-pink-100,
+[data-theme="dark"] div.bg-pink-50.text-pink-700 {
+    background-color: #FDF2F8 !important;
+    color: #BE185D !important;
+    border-color: #FBCFE8 !important;
+}
+[data-theme="dark"] span.bg-green-50,
+[data-theme="dark"] span.bg-green-100 {
+    background-color: #F0FDF4 !important;
+    color: #15803D !important;
+    border-color: #BBF7D0 !important;
+}
+[data-theme="dark"] span.bg-orange-50,
+[data-theme="dark"] span.bg-orange-100 {
+    background-color: #FFF7ED !important;
+    color: #C2410C !important;
+    border-color: #FED7AA !important;
+}
+[data-theme="dark"] span.bg-gray-100,
+[data-theme="dark"] span.bg-gray-200 {
+    background-color: #F3F4F6 !important;
+    color: #374151 !important;
+}
+/* ========================================================= */
+/* 모바일 화면 최적화 (640px 이하) */
+/* ========================================================= */
+@media (max-width: 640px) {
+    /* 스마트폰 입력창 터치 시 자동 확대 방지 */
+    input[type="text"],
+    input[type="date"],
+    input[type="month"],
+    select {
+        font-size: 14px;
+    }
+
+    /* 달력 뷰 / 리스트 뷰 버튼 및 월 조정 바 한 줄 맞춤 */
+    #viewModeCal, #viewModeList,
+    #cfViewModeCal, #cfViewModeList {
+        padding: 0.3rem 0.5rem !important;
+        font-size: 11px !important;
+    }
+
+    /* 달력 7칸 여백 및 최소 높이 슬림화 */
+    #calendarGrid, #cfCalendarGrid {
+        gap: 3px !important;
+    }
+    #calendarGrid > div, #cfCalendarGrid > div {
+        padding: 3px 2px !important;
+        min-height: 66px !important;
+        border-radius: 0.5rem !important;
+    }
+    #calendarGrid .text-\[10px\], #cfCalendarGrid .text-\[10px\] {
+        font-size: 9px !important;
+        letter-spacing: -0.03em;
+    }
+    #calendarGrid .text-\[9px\], #cfCalendarGrid .text-\[9px\] {
+        font-size: 8px !important;
+    }
+}
