@@ -45,7 +45,7 @@
         </div>
     </div>
 
-    <!-- 상단 헤더 -->
+    <!-- 상단 헤더 (사용자 멀티 선택 드롭다운 적용) -->
     <header class="theme-header py-3 px-4 sm:py-4 sm:px-6 mb-4 sm:mb-6 shadow-sm">
         <div class="max-w-6xl mx-auto flex justify-between items-center gap-2">
             <div class="flex items-center gap-2 min-w-0">
@@ -54,7 +54,13 @@
             </div>
             <div class="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
                 <span class="hidden sm:inline text-xs font-bold text-gray-500 whitespace-nowrap">사용자</span>
-                <select id="globalUserFilter" onchange="onGlobalUserChange(this.value)" class="bg-white border-2 border-amber-300 rounded-xl px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-bold text-gray-700 focus:outline-none shadow-sm"></select>
+                <div id="globalUserDropdownWrap" class="relative">
+                    <button type="button" id="globalUserFilterBtn" onclick="toggleGlobalUserDropdown(event)" class="bg-white border-2 border-amber-300 rounded-xl px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-bold text-gray-700 focus:outline-none shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+                        <span id="globalUserFilterLabel">전체 합산</span>
+                        <span class="text-[10px] text-gray-400">▼</span>
+                    </button>
+                    <div id="globalUserDropdownMenu" class="hidden absolute right-0 mt-1.5 w-44 bg-white border-2 border-amber-200 rounded-2xl shadow-xl p-2 z-40 space-y-1 text-xs"></div>
+                </div>
                 <button type="button" id="logoutBtn" onclick="logoutFirebase()" class="hidden px-2 sm:px-2.5 py-1 sm:py-1.5 bg-white hover:bg-rose-50 border border-gray-200 rounded-xl text-[11px] sm:text-xs font-bold text-gray-600 hover:text-rose-600 whitespace-nowrap">로그아웃</button>
             </div>
         </div>
@@ -129,13 +135,13 @@
                             <select id="txType" onchange="onTxTypeChange(false)" class="w-full p-2 bg-white border border-amber-300 rounded-xl text-xs font-bold text-amber-900"></select>
                         </div>
                         <div class="grid grid-cols-2 gap-2.5">
-                            <div>
+                            <div class="min-w-0">
                                 <label class="block text-xs font-bold text-gray-600 mb-1">대분류</label>
-                                <select id="txCatMain" onchange="updateTxSubCategories()" class="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs"></select>
+                                <select id="txCatMain" onchange="updateTxSubCategories()" class="w-full min-w-0 p-2 bg-white border border-amber-200 rounded-xl text-xs"></select>
                             </div>
-                            <div>
+                            <div class="min-w-0">
                                 <label class="block text-xs font-bold text-gray-600 mb-1">소분류 (선택)</label>
-                                <select id="txCatSub" class="w-full p-2 bg-white border border-amber-200 rounded-xl text-xs"></select>
+                                <select id="txCatSub" class="w-full min-w-0 p-2 bg-white border border-amber-200 rounded-xl text-xs"></select>
                             </div>
                         </div>
                         <div id="methodSingleBox">
@@ -148,7 +154,7 @@
                                 <select id="txFromAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl text-xs"></select>
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-purple-900 mb-1">입금 자산 (돈 들어간 곳)</label>
+                                <label id="txToAccountLabel" class="block text-xs font-bold text-purple-900 mb-1">입금 자산 (돈 들어간 곳)</label>
                                 <select id="txToAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl text-xs"></select>
                             </div>
                         </div>
@@ -219,7 +225,7 @@
                     <div id="listViewContainer" class="hidden space-y-3">
                         <div class="flex flex-wrap gap-2">
                             <select id="listTypeFilter" onchange="renderListView()" class="p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700"></select>
-                            <input type="text" id="listSearchInput" oninput="renderListView()" placeholder="내용, 카테고리, 결제수단 검색..." class="flex-1 min-w-[160px] p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none">
+                            <input type="text" id="listSearchInput" oninput="renderListView()" placeholder="내용, 카테고리, 결제수단 검색..." class="flex-1 min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none">
                         </div>
                         <div class="overflow-x-auto max-h-[540px] overflow-y-auto border border-gray-100 rounded-2xl">
                             <table class="w-full text-left border-collapse text-xs">
@@ -339,7 +345,7 @@
                                 <option value="out">출금(확정)만 보기</option>
                                 <option value="scheduled">카드결제(예정)만 보기</option>
                             </select>
-                            <input type="text" id="cfListSearchInput" oninput="renderCfListView()" placeholder="통장명, 내용, 구분 검색..." class="flex-1 min-w-[160px] p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none">
+                            <input type="text" id="cfListSearchInput" oninput="renderCfListView()" placeholder="통장명, 내용, 구분 검색..." class="flex-1 min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none">
                         </div>
                         <div class="overflow-x-auto max-h-[540px] overflow-y-auto border border-gray-100 rounded-2xl">
                             <table class="w-full text-left border-collapse text-xs">
@@ -424,152 +430,160 @@
                 <div id="atExecutionList" class="space-y-2.5"></div>
             </div>
 
+            <!-- 정기 항목 관리 (모바일 기본 접힘) -->
             <div class="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-                <div class="flex flex-wrap justify-between items-center gap-3 border-b border-gray-100 pb-3">
-                    <div>
-                        <h3 class="title-font text-lg text-gray-800">정기 항목 관리</h3>
-                        <p class="text-xs text-gray-500">여기서 금액을 수정하거나 중지·삭제해도 이미 반영된 과거 달의 내역은 그대로 유지됩니다.</p>
+                <div class="flex flex-wrap justify-between items-center gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <h3 class="title-font text-lg text-gray-800 whitespace-nowrap">정기 항목 관리</h3>
+                        <span id="atMasterTotalBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-bold whitespace-nowrap">0건</span>
                     </div>
-                    <button type="button" id="atToggleFormBtn" onclick="toggleAtForm()" class="px-4 py-2 btn-yellow rounded-xl text-xs shadow-sm whitespace-nowrap">+ 새 정기 항목 등록</button>
-                </div>
-
-                <div id="atFormCollapse" class="hidden bg-amber-50/40 p-4 sm:p-5 rounded-2xl border border-amber-200 space-y-4">
-                    <div class="flex justify-between items-center border-b border-amber-200 pb-2">
-                        <h4 id="atFormTitle" class="font-bold text-sm text-amber-900">새 정기 항목 등록</h4>
-                        <button type="button" id="atCancelEditBtn" onclick="resetAtForm(); toggleAtForm(false);" class="hidden text-xs text-gray-500 underline font-bold">수정 취소</button>
-                    </div>
-
-                    <form onsubmit="handleAtSubmit(event)" class="space-y-3 text-xs">
-                        <input type="hidden" id="editAtId">
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                            <div class="md:col-span-2">
-                                <label class="block font-bold text-gray-600 mb-1">항목 이름 (내용)</label>
-                                <input type="text" id="atName" placeholder="예: 월세, 넷플릭스, 가스비, 자동차보험, 재산세" required class="w-full p-2 bg-white border border-gray-300 rounded-xl">
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">사용자</label>
-                                <select id="atUser" onchange="onAtUserChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">구분</label>
-                                <select id="atType" onchange="onAtTypeChange(false)" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">대분류</label>
-                                <select id="atCatMain" onchange="updateAtSubCategories()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">소분류 (선택)</label>
-                                <select id="atCatSub" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
-                            </div>
-                            <div id="atMethodSingleWrap">
-                                <label id="atMethodLabel" class="block font-bold text-gray-600 mb-1">결제수단</label>
-                                <select id="atMethod" onchange="onAtMethodChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
-                            </div>
-                            <div id="atInstallmentWrap" class="hidden">
-                                <label class="block font-bold text-pink-700 mb-1">신용카드 결제 방식</label>
-                                <select id="atInstallmentMonths" class="w-full p-2 bg-pink-50/40 border border-pink-200 rounded-xl font-bold text-pink-900"></select>
-                            </div>
-                        </div>
-
-                        <div id="atMethodTransferWrap" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-purple-50/60 p-3 rounded-xl border border-purple-200">
-                            <div>
-                                <label class="block font-bold text-purple-900 mb-1">출금 계좌</label>
-                                <select id="atFromAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-purple-900 mb-1">입금 자산 (적금/계좌/투자/대출/상품권)</label>
-                                <select id="atToAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">납부 주기</label>
-                                <select id="atCycleType" onchange="onAtCycleTypeChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
-                                    <option value="monthly">매월 반복</option>
-                                    <option value="specific">특정 월 선택 (세금·보험 등)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">결제 · 납부일</label>
-                                <select id="atDayOfMonth" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">금액 방식</label>
-                                <select id="atAmountType" onchange="onAtAmountTypeChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
-                                    <option value="fixed">고정 금액형</option>
-                                    <option value="variable">변동 금액형 (전년 동월 참조)</option>
-                                </select>
-                            </div>
-                            <div id="atFixedAmountWrap">
-                                <label class="block font-bold text-gray-600 mb-1">고정 금액 (원)</label>
-                                <input type="text" inputmode="numeric" id="atAmount" oninput="formatCommaInput(this)" placeholder="예: 55,000" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold text-right">
-                            </div>
-                            <div id="atVariableHintBox" class="hidden p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-800">
-                                1년 차는 빈칸, 다음 해부터 작년 같은 달 금액 자동 채움
-                            </div>
-                        </div>
-
-                        <div id="atSpecificMonthsWrap" class="hidden bg-white p-3 rounded-xl border border-orange-200 space-y-2">
-                            <div class="flex justify-between items-center">
-                                <span class="font-bold text-orange-900">납부할 월 선택 (복수 선택 가능)</span>
-                                <span class="text-[11px] text-gray-400">선택한 달에 [가계부] 및 [결제·출금] 달력에도 납부 예정 알림이 표시됩니다.</span>
-                            </div>
-                            <div id="atSpecificMonthsGrid" class="grid grid-cols-6 sm:grid-cols-12 gap-1.5"></div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end pt-1">
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">적용 시작월</label>
-                                <input type="month" id="atStartYM" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
-                            </div>
-                            <div>
-                                <label class="block font-bold text-gray-600 mb-1">종료·만기월 (선택)</label>
-                                <input type="month" id="atEndYM" class="w-full p-2 bg-white border border-gray-300 rounded-xl">
-                            </div>
-                            <div class="pb-1.5">
-                                <label class="flex items-center space-x-2 cursor-pointer">
-                                    <input type="checkbox" id="atShiftBusinessDay" checked class="rounded accent-orange-500">
-                                    <span class="font-bold text-gray-700">주말·공휴일 시 다음 영업일 이동</span>
-                                </label>
-                            </div>
-                            <div class="flex justify-end">
-                                <button type="submit" id="atSubmitBtn" class="w-full py-2.5 btn-orange rounded-xl text-xs shadow-sm">정기 항목 저장</button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="flex justify-between items-center">
-                    <div class="flex bg-gray-100 p-1 rounded-xl gap-1">
-                        <button onclick="setAtMasterFilter('active')" id="atFilter-active" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-gray-800 shadow-sm">사용 중</button>
-                        <button onclick="setAtMasterFilter('paused')" id="atFilter-paused" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">일시중지</button>
-                        <button onclick="setAtMasterFilter('ended')" id="atFilter-ended" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">종료됨</button>
-                        <button onclick="setAtMasterFilter('all')" id="atFilter-all" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">전체</button>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button type="button" id="atToggleFormBtn" onclick="openAtFormFromHeader()" class="px-3 sm:px-4 py-1.5 sm:py-2 btn-yellow rounded-xl text-xs shadow-sm whitespace-nowrap">+ 새 정기 항목</button>
+                        <button type="button" id="atMasterCollapseBtn" onclick="toggleCollapsibleSection('atMasterSectionBody', 'atMasterCollapseBtn', '목록 펼치기 ▼', '접기 ▲')" class="md:hidden px-3 py-1.5 sm:py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs whitespace-nowrap">목록 펼치기 ▼</button>
                     </div>
                 </div>
 
-                <div class="hidden md:block overflow-x-auto border border-gray-100 rounded-2xl">
-                    <table class="w-full text-left border-collapse text-xs">
-                        <thead class="bg-gray-50 text-gray-500 border-b border-gray-200">
-                            <tr>
-                                <th class="py-2.5 px-3">상태</th>
-                                <th class="py-2.5 px-3">항목 / 분류</th>
-                                <th class="py-2.5 px-3">주기 / 기간</th>
-                                <th class="py-2.5 px-3">결제수단 / 계좌</th>
-                                <th class="py-2.5 px-3 text-right">금액 기준</th>
-                                <th class="py-2.5 px-3 text-center">관리</th>
-                            </tr>
-                        </thead>
-                        <tbody id="atMasterTableBody" class="divide-y divide-gray-100"></tbody>
-                    </table>
-                </div>
+                <div id="atMasterSectionBody" class="hidden md:block space-y-4 pt-3 border-t border-gray-100">
+                    <p class="text-xs text-gray-500">여기서 금액을 수정하거나 중지·삭제해도 이미 반영된 과거 달의 내역은 그대로 유지됩니다.</p>
 
-                <div id="atMasterCardList" class="md:hidden space-y-2.5"></div>
+                    <div id="atFormCollapse" class="hidden bg-amber-50/40 p-4 sm:p-5 rounded-2xl border border-amber-200 space-y-4">
+                        <div class="flex justify-between items-center border-b border-amber-200 pb-2">
+                            <h4 id="atFormTitle" class="font-bold text-sm text-amber-900">새 정기 항목 등록</h4>
+                            <button type="button" id="atCancelEditBtn" onclick="resetAtForm(); toggleAtForm(false);" class="hidden text-xs text-gray-500 underline font-bold">수정 취소</button>
+                        </div>
+
+                        <form onsubmit="handleAtSubmit(event)" class="space-y-3 text-xs">
+                            <input type="hidden" id="editAtId">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div class="md:col-span-2">
+                                    <label class="block font-bold text-gray-600 mb-1">항목 이름 (내용)</label>
+                                    <input type="text" id="atName" placeholder="예: 월세, 넷플릭스, 가스비, 자동차보험, 재산세" required class="w-full p-2 bg-white border border-gray-300 rounded-xl">
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">사용자</label>
+                                    <select id="atUser" onchange="onAtUserChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">구분</label>
+                                    <select id="atType" onchange="onAtTypeChange(false)" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">대분류</label>
+                                    <select id="atCatMain" onchange="updateAtSubCategories()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">소분류 (선택)</label>
+                                    <select id="atCatSub" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
+                                </div>
+                                <div id="atMethodSingleWrap">
+                                    <label id="atMethodLabel" class="block font-bold text-gray-600 mb-1">결제수단</label>
+                                    <select id="atMethod" onchange="onAtMethodChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
+                                </div>
+                                <div id="atInstallmentWrap" class="hidden">
+                                    <label class="block font-bold text-pink-700 mb-1">신용카드 결제 방식</label>
+                                    <select id="atInstallmentMonths" class="w-full p-2 bg-pink-50/40 border border-pink-200 rounded-xl font-bold text-pink-900"></select>
+                                </div>
+                            </div>
+
+                            <div id="atMethodTransferWrap" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-purple-50/60 p-3 rounded-xl border border-purple-200">
+                                <div>
+                                    <label class="block font-bold text-purple-900 mb-1">출금 계좌</label>
+                                    <select id="atFromAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-purple-900 mb-1">입금 자산 (적금/계좌/투자/대출/상품권)</label>
+                                    <select id="atToAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">납부 주기</label>
+                                    <select id="atCycleType" onchange="onAtCycleTypeChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
+                                        <option value="monthly">매월 반복</option>
+                                        <option value="specific">특정 월 선택 (세금·보험 등)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">결제 · 납부일</label>
+                                    <select id="atDayOfMonth" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">금액 방식</label>
+                                    <select id="atAmountType" onchange="onAtAmountTypeChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
+                                        <option value="fixed">고정 금액형</option>
+                                        <option value="variable">변동 금액형 (전년 동월 참조)</option>
+                                    </select>
+                                </div>
+                                <div id="atFixedAmountWrap">
+                                    <label class="block font-bold text-gray-600 mb-1">고정 금액 (원)</label>
+                                    <input type="text" inputmode="numeric" id="atAmount" oninput="formatCommaInput(this)" placeholder="예: 55,000" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold text-right">
+                                </div>
+                                <div id="atVariableHintBox" class="hidden p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-800">
+                                    1년 차는 빈칸, 다음 해부터 작년 같은 달 금액 자동 채움
+                                </div>
+                            </div>
+
+                            <div id="atSpecificMonthsWrap" class="hidden bg-white p-3 rounded-xl border border-orange-200 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-bold text-orange-900">납부할 월 선택 (복수 선택 가능)</span>
+                                    <span class="text-[11px] text-gray-400">선택한 달에 [가계부] 및 [결제·출금] 달력에도 납부 예정 알림이 표시됩니다.</span>
+                                </div>
+                                <div id="atSpecificMonthsGrid" class="grid grid-cols-6 sm:grid-cols-12 gap-1.5"></div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end pt-1">
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">적용 시작월</label>
+                                    <input type="month" id="atStartYM" class="w-full p-2 bg-white border border-gray-300 rounded-xl font-bold">
+                                </div>
+                                <div>
+                                    <label class="block font-bold text-gray-600 mb-1">종료·만기월 (선택)</label>
+                                    <input type="month" id="atEndYM" class="w-full p-2 bg-white border border-gray-300 rounded-xl">
+                                </div>
+                                <div class="pb-1.5">
+                                    <label class="flex items-center space-x-2 cursor-pointer">
+                                        <input type="checkbox" id="atShiftBusinessDay" checked class="rounded accent-orange-500">
+                                        <span class="font-bold text-gray-700">주말·공휴일 시 다음 영업일 이동</span>
+                                    </label>
+                                </div>
+                                <div class="flex justify-end">
+                                    <button type="submit" id="atSubmitBtn" class="w-full py-2.5 btn-orange rounded-xl text-xs shadow-sm">정기 항목 저장</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="flex justify-between items-center">
+                        <div class="flex bg-gray-100 p-1 rounded-xl gap-1">
+                            <button onclick="setAtMasterFilter('active')" id="atFilter-active" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-gray-800 shadow-sm">사용 중</button>
+                            <button onclick="setAtMasterFilter('paused')" id="atFilter-paused" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">일시중지</button>
+                            <button onclick="setAtMasterFilter('ended')" id="atFilter-ended" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">종료됨</button>
+                            <button onclick="setAtMasterFilter('all')" id="atFilter-all" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">전체</button>
+                        </div>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto border border-gray-100 rounded-2xl">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead class="bg-gray-50 text-gray-500 border-b border-gray-200">
+                                <tr>
+                                    <th class="py-2.5 px-3">상태</th>
+                                    <th class="py-2.5 px-3">항목 / 분류</th>
+                                    <th class="py-2.5 px-3">주기 / 기간</th>
+                                    <th class="py-2.5 px-3">결제수단 / 계좌</th>
+                                    <th class="py-2.5 px-3 text-right">금액 기준</th>
+                                    <th class="py-2.5 px-3 text-center">관리</th>
+                                </tr>
+                            </thead>
+                            <tbody id="atMasterTableBody" class="divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+
+                    <div id="atMasterCardList" class="md:hidden space-y-2.5"></div>
+                </div>
             </div>
         </section>
 
@@ -698,7 +712,7 @@
                     <div class="box-aqua p-4 sm:p-5 rounded-3xl shadow-sm space-y-3">
                         <div class="flex justify-between items-center border-b border-blue-200 pb-2.5">
                             <h3 class="title-font text-lg text-blue-900">카드별 실적 달성률</h3>
-                            <span id="sum3CardPerfPeriod" class="text-[11px] text-blue-700 font-bold">카드별 기준 적용</span>
+                            <span id="sum3CardPerfPeriod" class="text-[11px] text-blue-700 font-bold">실적 관리 카드 기준</span>
                         </div>
                         <div id="sum3CardPerfList" class="space-y-3"></div>
                     </div>
@@ -726,7 +740,7 @@
                         <span id="asset5OwnerBadge" class="text-[10px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-bold">전체 자산 기준</span>
                     </div>
                     <div id="asset5TotalAssets" class="text-xl sm:text-2xl font-bold text-blue-600">0원</div>
-                    <div class="text-[11px] text-gray-400">통장 · 예적금 · 상품권 · 투자 · 실물자산</div>
+                    <div class="text-[11px] text-gray-400">입출금 · 상품권 · 예적금 · 투자 · 실물자산</div>
                 </div>
 
                 <div class="bg-white p-4 sm:p-5 rounded-2xl border-2 border-pink-100 shadow-sm flex flex-col justify-between space-y-1.5">
@@ -749,19 +763,26 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
-                <div class="box-aqua p-4 sm:p-5 rounded-3xl shadow-sm space-y-4">
-                    <div class="flex justify-between items-center border-b border-blue-200 pb-2.5">
-                        <h3 class="title-font text-lg text-blue-900">보유 자산 상세</h3>
+                <div class="box-aqua p-4 sm:p-5 rounded-3xl shadow-sm space-y-3">
+                    <div class="flex justify-between items-center gap-2 border-b border-blue-200 pb-2.5">
+                        <div>
+                            <h3 class="title-font text-lg text-blue-900">보유 자산 상세</h3>
+                            <p class="text-[11px] text-blue-700/70">종류를 누르면 상세 계좌가 펼쳐집니다.</p>
+                        </div>
+                        <button type="button" id="asset5BankToggleAllBtn" onclick="toggleAllAsset5BankGroups()" class="px-2.5 py-1 bg-white hover:bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">모두 펼치기</button>
                     </div>
-                    <div id="asset5BankSections" class="space-y-4"></div>
+                    <div id="asset5BankSections" class="space-y-2.5"></div>
                 </div>
 
-                <div class="box-slowpoke p-4 sm:p-5 rounded-3xl shadow-sm space-y-4">
-                    <div class="flex justify-between items-center border-b border-pink-200 pb-2.5">
-                        <h3 class="title-font text-lg text-pink-900">부채 및 신용카드 미결제</h3>
-                        <span class="text-[11px] text-pink-700">대출 이체·카드 정산 시 자동 차감</span>
+                <div class="box-slowpoke p-4 sm:p-5 rounded-3xl shadow-sm space-y-3">
+                    <div class="flex justify-between items-center gap-2 border-b border-pink-200 pb-2.5">
+                        <div>
+                            <h3 class="title-font text-lg text-pink-900">부채 및 신용카드 미결제</h3>
+                            <p class="text-[11px] text-pink-700/70">종류를 누르면 상세 내역이 펼쳐집니다.</p>
+                        </div>
+                        <button type="button" id="asset5DebtToggleAllBtn" onclick="toggleAllAsset5DebtGroups()" class="px-2.5 py-1 bg-white hover:bg-pink-50 border border-pink-200 text-pink-800 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">모두 펼치기</button>
                     </div>
-                    <div id="asset5DebtSections" class="space-y-4"></div>
+                    <div id="asset5DebtSections" class="space-y-2.5"></div>
                 </div>
             </div>
 
@@ -769,7 +790,7 @@
                 <div class="box-psyduck p-4 sm:p-5 rounded-3xl shadow-sm space-y-4">
                     <div class="flex justify-between items-center border-b border-amber-200 pb-2.5">
                         <h3 class="title-font text-lg text-amber-900">자산 구성 비중</h3>
-                        <span class="text-[11px] text-gray-500">유동 · 저축 · 투자 · 실물</span>
+                        <span class="text-[11px] text-gray-500">입출금 · 상품권 · 저축 · 투자 · 실물</span>
                     </div>
                     <div class="flex flex-col sm:flex-row items-center gap-5">
                         <div id="asset5DonutChart" class="w-40 h-40 rounded-full shrink-0 flex items-center justify-center relative shadow-inner bg-gray-100">
@@ -900,16 +921,16 @@
                 </div>
             </div>
 
-            <!-- [하위 2] 사용자 관리 -->
+            <!-- [하위 2] 사용자 관리 (모바일 입력칸 튀어나감 해결) -->
             <div id="sub2" class="sub-tab-content hidden box-slowpoke p-4 sm:p-6 rounded-3xl shadow-sm space-y-5 sm:space-y-6">
                 <div class="border-b border-pink-200 pb-3">
                     <h2 class="title-font text-lg sm:text-xl text-pink-900">사용자(가족) 목록 관리</h2>
                     <p class="text-xs text-gray-500 mt-1">사용자 이름을 수정하면 이미 등록된 기존 가계부 내역과 자산 소유자명도 자동으로 함께 변경됩니다.</p>
                 </div>
                 <div class="max-w-xl space-y-4">
-                    <div class="flex gap-2">
-                        <input type="text" id="newUserName" placeholder="새 사용자 이름 입력 (예: 홍길동, 배우자, 공동생활비)" class="flex-1 p-2.5 bg-white border border-pink-300 rounded-xl text-sm focus:outline-none">
-                        <button onclick="addUser()" class="px-4 sm:px-5 py-2.5 btn-pink rounded-xl text-xs sm:text-sm shadow-sm whitespace-nowrap">사용자 추가</button>
+                    <div class="flex items-center gap-2 w-full">
+                        <input type="text" id="newUserName" placeholder="새 사용자 이름 (예: 배우자, 공동)" class="flex-1 min-w-0 w-full p-2.5 bg-white border border-pink-300 rounded-xl text-xs sm:text-sm focus:outline-none">
+                        <button onclick="addUser()" class="shrink-0 px-3.5 sm:px-5 py-2.5 btn-pink rounded-xl text-xs sm:text-sm shadow-sm whitespace-nowrap">사용자 추가</button>
                     </div>
                     <div class="bg-white rounded-2xl border border-pink-200 overflow-hidden">
                         <table class="w-full text-left text-sm">
@@ -925,63 +946,75 @@
                 </div>
             </div>
 
-            <!-- [하위 3] 구분 · 대분류 · 소분류 -->
+            <!-- [하위 3] 구분 · 대분류 · 소분류 (모바일 기본 접힘 + 튀어나감 해결) -->
             <div id="sub3" class="sub-tab-content hidden box-psyduck p-4 sm:p-6 rounded-3xl shadow-sm space-y-5">
                 <div class="border-b border-amber-200 pb-3">
                     <h2 class="title-font text-lg sm:text-xl text-amber-900">구분 및 카테고리 (대분류 · 소분류) 관리</h2>
                     <p class="text-xs text-gray-500 mt-1">1단계 [구분]을 클릭하면 2단계 [대분류]가, 대분류를 클릭하면 3단계 [소분류]가 열립니다.</p>
                 </div>
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col h-[420px] sm:h-[460px]">
-                        <div class="flex justify-between items-center mb-2.5">
-                            <h3 class="font-bold text-sm text-amber-900">1. 구분 목록</h3>
-                            <span class="text-[11px] text-gray-400">성격 지정형</span>
+                    <!-- 1. 구분 목록 -->
+                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col max-h-[420px] lg:h-[460px]">
+                        <div class="flex justify-between items-center gap-2 mb-2.5">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <h3 class="font-bold text-sm text-amber-900 whitespace-nowrap">1. 구분 목록</h3>
+                                <span class="text-[10px] text-gray-400 whitespace-nowrap">성격 지정형</span>
+                            </div>
+                            <button type="button" id="addTypeToggleBtn" onclick="toggleCollapsibleSection('addTypeFormWrap', 'addTypeToggleBtn', '+ 추가', '접기 ▲')" class="md:hidden shrink-0 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 추가</button>
                         </div>
-                        <div class="space-y-2 mb-3 bg-amber-50/60 p-2.5 rounded-xl border border-amber-100">
-                            <input type="text" id="newTxTypeName" placeholder="새 구분 이름" class="w-full p-2 bg-white border border-gray-300 rounded-lg text-xs focus:outline-none">
-                            <div class="flex gap-1.5">
-                                <select id="newTxTypeBehavior" class="flex-1 p-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-700">
+                        <div id="addTypeFormWrap" class="hidden md:block mb-3 bg-amber-50/60 p-2.5 rounded-xl border border-amber-100 space-y-2">
+                            <input type="text" id="newTxTypeName" placeholder="새 구분 이름" class="w-full min-w-0 p-2 bg-white border border-gray-300 rounded-lg text-xs focus:outline-none">
+                            <div class="flex items-center gap-1.5 w-full">
+                                <select id="newTxTypeBehavior" class="flex-1 min-w-0 p-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-700">
                                     <option value="expense">지출형 (소비 합계)</option>
                                     <option value="income">수입형 (수입 합계)</option>
                                     <option value="transfer">이체형 (계좌 이동)</option>
                                     <option value="voucher">상품권충전형 (→상품권)</option>
                                 </select>
-                                <button onclick="addTxType()" class="px-3.5 py-2 btn-yellow rounded-lg text-xs whitespace-nowrap">추가</button>
+                                <button onclick="addTxType()" class="shrink-0 px-3 py-2 btn-yellow rounded-lg text-xs whitespace-nowrap">추가</button>
                             </div>
                         </div>
                         <div id="txTypeList" class="flex-1 overflow-y-auto space-y-1.5 pr-1"></div>
                     </div>
 
-                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col h-[420px] sm:h-[460px]">
-                        <div class="flex justify-between items-center mb-2.5">
-                            <h3 class="font-bold text-sm text-amber-900">2. 대분류 <span id="currentCatTypeLabel" class="text-xs bg-amber-100 px-2 py-0.5 rounded text-amber-800 ml-1">-</span></h3>
+                    <!-- 2. 대분류 -->
+                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col max-h-[420px] lg:h-[460px]">
+                        <div class="flex justify-between items-center gap-2 mb-2.5">
+                            <h3 class="font-bold text-sm text-amber-900 truncate">2. 대분류 <span id="currentCatTypeLabel" class="text-xs bg-amber-100 px-2 py-0.5 rounded text-amber-800 ml-1">-</span></h3>
+                            <button type="button" id="addMainCatToggleBtn" onclick="toggleCollapsibleSection('addMainCatFormWrap', 'addMainCatToggleBtn', '+ 추가', '접기 ▲')" class="md:hidden shrink-0 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 추가</button>
                         </div>
-                        <div class="flex gap-1.5 mb-3">
-                            <input type="text" id="newMainCatInput" placeholder="새 대분류 이름 입력" class="flex-1 p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
-                            <button onclick="addMainCategory()" class="px-3.5 py-2 btn-yellow rounded-xl text-xs whitespace-nowrap">추가</button>
+                        <div id="addMainCatFormWrap" class="hidden md:block mb-3">
+                            <div class="flex items-center gap-1.5 w-full">
+                                <input type="text" id="newMainCatInput" placeholder="새 대분류 이름 입력" class="flex-1 min-w-0 w-full p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
+                                <button onclick="addMainCategory()" class="shrink-0 px-3 py-2 btn-yellow rounded-xl text-xs whitespace-nowrap">추가</button>
+                            </div>
                         </div>
                         <div id="mainCategoryList" class="flex-1 overflow-y-auto space-y-1.5 pr-1"></div>
                     </div>
 
-                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col h-[420px] sm:h-[460px]">
-                        <div class="flex justify-between items-center mb-2.5">
-                            <h3 class="font-bold text-sm text-amber-900">3. 소분류 <span id="selectedMainCatBadge" class="text-xs bg-pink-100 text-pink-800 px-2 py-0.5 rounded ml-1">-</span></h3>
+                    <!-- 3. 소분류 -->
+                    <div class="bg-white p-4 rounded-2xl border border-amber-200 flex flex-col max-h-[420px] lg:h-[460px]">
+                        <div class="flex justify-between items-center gap-2 mb-2.5">
+                            <h3 class="font-bold text-sm text-amber-900 truncate">3. 소분류 <span id="selectedMainCatBadge" class="text-xs bg-pink-100 text-pink-800 px-2 py-0.5 rounded ml-1">-</span></h3>
+                            <button type="button" id="addSubCatToggleBtn" onclick="toggleCollapsibleSection('addSubCatFormWrap', 'addSubCatToggleBtn', '+ 추가', '접기 ▲')" class="md:hidden shrink-0 px-2.5 py-1 bg-pink-50 border border-pink-200 text-pink-800 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 추가</button>
                         </div>
-                        <div class="flex gap-1.5 mb-3">
-                            <input type="text" id="newSubCatInput" placeholder="새 소분류 이름 입력" class="flex-1 p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
-                            <button onclick="addSubCategory()" class="px-3.5 py-2 btn-pink rounded-xl text-xs whitespace-nowrap">추가</button>
+                        <div id="addSubCatFormWrap" class="hidden md:block mb-3">
+                            <div class="flex items-center gap-1.5 w-full">
+                                <input type="text" id="newSubCatInput" placeholder="새 소분류 이름 입력" class="flex-1 min-w-0 w-full p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
+                                <button onclick="addSubCategory()" class="shrink-0 px-3 py-2 btn-pink rounded-xl text-xs whitespace-nowrap">추가</button>
+                            </div>
                         </div>
                         <div id="subCategoryList" class="flex-1 overflow-y-auto space-y-1.5 pr-1"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- [하위 4] 자산 · 카드 · 부채 설정 -->
+            <!-- [하위 4] 자산 · 카드 · 부채 설정 (모바일 폼 기본 접힘 + 사용자별 아코디언) -->
             <div id="sub4" class="sub-tab-content hidden box-aqua p-4 sm:p-6 rounded-3xl shadow-sm space-y-5 sm:space-y-6">
                 <div class="border-b border-blue-200 pb-3 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
                     <div>
                         <h2 class="title-font text-lg sm:text-xl text-blue-900">자산 · 신용카드 · 부채 통합 설정</h2>
-                        <p class="text-xs text-gray-500 mt-1">소유자별로 같은 이름의 카드·통장도 자유롭게 등록할 수 있으며, 내부 고유 번호로 안전하게 구분됩니다.</p>
+                        <p class="text-xs text-gray-500 mt-1">사용자별로 묶어 관리되며, 내부는 <b>종류별 → 자산명(가나다)순</b>으로 자동 정렬됩니다.</p>
                     </div>
                     <div class="flex bg-white p-1 rounded-xl border border-blue-300 self-start">
                         <button onclick="selectAssetTab('bank')" id="assetTab-bank" class="asset-tab-btn px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500 text-white whitespace-nowrap">통장 · 투자 · 실물</button>
@@ -992,235 +1025,218 @@
 
                 <!-- (1) 통장 · 투자 · 실물 · 상품권 -->
                 <div id="assetSection-bank" class="space-y-4">
-                    <div class="bg-white p-4 rounded-2xl border border-blue-200">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 id="bankFormTitle" class="font-bold text-sm text-blue-900">통장 · 투자 · 실물자산 신규 등록</h3>
-                            <button onclick="resetBankForm()" id="bankCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                    <div id="bankFormCard" class="bg-white p-4 rounded-2xl border border-blue-200">
+                        <div class="flex justify-between items-center gap-2">
+                            <h3 id="bankFormTitle" class="font-bold text-sm text-blue-900 truncate">통장 · 투자 · 실물자산 신규 등록</h3>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button onclick="resetBankForm()" id="bankCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                                <button type="button" id="bankFormToggleBtn" onclick="toggleCollapsibleSection('bankFormBody', 'bankFormToggleBtn', '+ 신규 등록 ▼', '접기 ▲')" class="md:hidden px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 신규 등록 ▼</button>
+                            </div>
                         </div>
-                        <input type="hidden" id="editBankId">
-                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
-                                <select id="bankOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                        <div id="bankFormBody" class="hidden md:block mt-3 pt-3 border-t border-gray-100">
+                            <input type="hidden" id="editBankId">
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
+                                    <select id="bankOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">종류</label>
+                                    <select id="bankType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white">
+                                        <option value="입출금통장">입출금통장</option>
+                                        <option value="예·적금">예·적금</option>
+                                        <option value="선불·상품권">선불·상품권 (온누리/지역사랑 등)</option>
+                                        <option value="현금">현금</option>
+                                        <option value="투자">투자 (주식·펀드·연금)</option>
+                                        <option value="실물자산">실물자산 (부동산·보증금 등)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">자산 이름</label>
+                                    <input type="text" id="bankName" placeholder="예: 생활비통장, 주식계좌, 전세보증금" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">초기 잔액 / 취득가 (원)</label>
+                                    <input type="text" inputmode="numeric" id="bankInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
+                                </div>
+                                <button onclick="saveBankAsset()" id="bankSubmitBtn" class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">저장하기</button>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">종류</label>
-                                <select id="bankType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white">
-                                    <option value="입출금통장">입출금통장</option>
-                                    <option value="예·적금">예·적금</option>
-                                    <option value="선불·상품권">선불·상품권 (온누리/지역사랑 등)</option>
-                                    <option value="현금">현금</option>
-                                    <option value="투자">투자 (주식·펀드·연금)</option>
-                                    <option value="실물자산">실물자산 (부동산·보증금 등)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">자산 이름</label>
-                                <input type="text" id="bankName" placeholder="예: 생활비통장, 주식계좌, 전세보증금" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">초기 잔액 / 취득가 (원)</label>
-                                <input type="text" inputmode="numeric" id="bankInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
-                            </div>
-                            <button onclick="saveBankAsset()" id="bankSubmitBtn" class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">저장하기</button>
                         </div>
                     </div>
-                    <div class="hidden md:block bg-white rounded-2xl border border-blue-200 overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-blue-50 text-blue-900 border-b border-blue-100">
-                                <tr>
-                                    <th class="py-3 px-4">소유자</th>
-                                    <th class="py-3 px-4">종류</th>
-                                    <th class="py-3 px-4">자산명</th>
-                                    <th class="py-3 px-4 text-right">설정된 초기 잔액</th>
-                                    <th class="py-3 px-4 text-right">관리</th>
-                                </tr>
-                            </thead>
-                            <tbody id="bankListBody" class="divide-y divide-gray-100"></tbody>
-                        </table>
-                    </div>
-                    <div id="bankCardList" class="md:hidden space-y-2.5"></div>
+                    <div id="bankGroupedList" class="space-y-2.5"></div>
                 </div>
 
                 <!-- (2) 신용 · 체크카드 -->
                 <div id="assetSection-card" class="hidden space-y-4">
-                    <div class="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200 space-y-4">
-                        <div class="flex justify-between items-center">
-                            <h3 id="cardFormTitle" class="font-bold text-sm text-blue-900">신용 · 체크카드 신규 등록</h3>
-                            <button onclick="resetCardForm()" id="cardCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
-                        </div>
-                        <input type="hidden" id="editCardId">
-                        <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
-                                <select id="cardOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">카드 구분</label>
-                                <select id="cardType" onchange="toggleCardFields()" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
-                                    <option value="신용카드">신용카드</option>
-                                    <option value="체크카드">체크카드</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">카드 이름</label>
-                                <input type="text" id="cardName" placeholder="예: 신한카드, 현대카드" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">연결 출금 계좌</label>
-                                <select id="cardLinkedAccount" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white"></select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">목표 실적 (원)</label>
-                                <input type="text" inputmode="numeric" id="cardTargetSpend" oninput="formatCommaInput(this)" placeholder="예: 300,000" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">실적 집계 기준</label>
-                                <select id="cardPerfBasis" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
-                                    <option value="calendar">매월 1일 ~ 말일</option>
-                                    <option value="billing">카드 이용기간과 동일</option>
-                                </select>
+                    <div id="cardFormCard" class="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200">
+                        <div class="flex justify-between items-center gap-2">
+                            <h3 id="cardFormTitle" class="font-bold text-sm text-blue-900 truncate">신용 · 체크카드 신규 등록</h3>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button onclick="resetCardForm()" id="cardCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                                <button type="button" id="cardFormToggleBtn" onclick="toggleCollapsibleSection('cardFormBody', 'cardFormToggleBtn', '+ 신규 등록 ▼', '접기 ▲')" class="md:hidden px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 신규 등록 ▼</button>
                             </div>
                         </div>
-                        <div id="creditCardOnlyBox" class="bg-blue-50/60 p-3.5 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-                            <div>
-                                <label class="block text-xs font-bold text-blue-900 mb-1">매월 대금 결제일</label>
-                                <select id="cardPayDay" class="w-full p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
-                            </div>
-                            <div class="md:col-span-2">
-                                <label class="block text-xs font-bold text-blue-900 mb-1">카드 이용기간 (청구액 집계 기준)</label>
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                    <select id="cardStartMonthType" class="p-2 border border-blue-200 rounded-xl text-xs bg-white">
-                                        <option value="전전월">전전월</option>
-                                        <option value="전월" selected>전월</option>
+                        <div id="cardFormBody" class="hidden md:block mt-3 pt-3 border-t border-gray-100 space-y-4">
+                            <input type="hidden" id="editCardId">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
+                                    <select id="cardOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">카드 구분</label>
+                                    <select id="cardType" onchange="toggleCardFields()" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
+                                        <option value="신용카드">신용카드</option>
+                                        <option value="체크카드">체크카드</option>
                                     </select>
-                                    <select id="cardStartDay" class="p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
-                                    <span class="text-xs font-bold text-gray-500">~</span>
-                                    <select id="cardEndMonthType" class="p-2 border border-blue-200 rounded-xl text-xs bg-white">
-                                        <option value="전월">전월</option>
-                                        <option value="당월" selected>당월</option>
-                                    </select>
-                                    <select id="cardEndDay" class="p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">카드 이름</label>
+                                    <input type="text" id="cardName" placeholder="예: 신한카드, 현대카드" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">연결 출금 계좌</label>
+                                    <select id="cardLinkedAccount" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white"></select>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-blue-900 mb-1">초기 리볼빙 이월잔액 (원)</label>
-                                <input type="text" inputmode="numeric" id="cardRevolving" oninput="formatCommaInput(this)" placeholder="0" value="0" class="w-full p-2 border border-blue-200 rounded-xl text-xs text-right">
+                            <!-- 실적 관리 여부 설정 -->
+                            <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                                <div class="pb-1.5">
+                                    <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                        <input type="checkbox" id="cardTrackPerf" onchange="toggleCardPerfFields()" checked class="rounded accent-blue-500">
+                                        <span class="font-bold text-blue-900">지출 분석에 실적 달성률 표시</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">목표 실적 (원)</label>
+                                    <input type="text" inputmode="numeric" id="cardTargetSpend" oninput="formatCommaInput(this)" placeholder="예: 300,000" class="w-full p-2 bg-white border border-gray-300 rounded-xl text-xs font-bold text-right disabled:bg-gray-100 disabled:text-gray-400">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">실적 집계 기준</label>
+                                    <select id="cardPerfBasis" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold disabled:bg-gray-100 disabled:text-gray-400">
+                                        <option value="calendar">매월 1일 ~ 말일</option>
+                                        <option value="billing">카드 이용기간과 동일</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="creditCardOnlyBox" class="bg-blue-50/60 p-3.5 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                                <div>
+                                    <label class="block text-xs font-bold text-blue-900 mb-1">매월 대금 결제일</label>
+                                    <select id="cardPayDay" class="w-full p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs font-bold text-blue-900 mb-1">카드 이용기간 (청구액 집계 기준)</label>
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <select id="cardStartMonthType" class="p-2 border border-blue-200 rounded-xl text-xs bg-white">
+                                            <option value="전전월">전전월</option>
+                                            <option value="전월" selected>전월</option>
+                                        </select>
+                                        <select id="cardStartDay" class="p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
+                                        <span class="text-xs font-bold text-gray-500">~</span>
+                                        <select id="cardEndMonthType" class="p-2 border border-blue-200 rounded-xl text-xs bg-white">
+                                            <option value="전월">전월</option>
+                                            <option value="당월" selected>당월</option>
+                                        </select>
+                                        <select id="cardEndDay" class="p-2 border border-blue-200 rounded-xl text-xs bg-white font-bold"></select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-blue-900 mb-1">초기 리볼빙 이월잔액 (원)</label>
+                                    <input type="text" inputmode="numeric" id="cardRevolving" oninput="formatCommaInput(this)" placeholder="0" value="0" class="w-full p-2 border border-blue-200 rounded-xl text-xs text-right">
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button onclick="saveCardAsset()" id="cardSubmitBtn" class="py-2.5 px-6 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">카드 설정 저장하기</button>
                             </div>
                         </div>
-                        <div class="flex justify-end">
-                            <button onclick="saveCardAsset()" id="cardSubmitBtn" class="py-2.5 px-6 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">카드 설정 저장하기</button>
-                        </div>
                     </div>
-                    <div class="hidden md:block bg-white rounded-2xl border border-blue-200 overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-blue-50 text-blue-900 border-b border-blue-100">
-                                <tr>
-                                    <th class="py-3 px-4">소유자</th>
-                                    <th class="py-3 px-4">구분</th>
-                                    <th class="py-3 px-4">카드명</th>
-                                    <th class="py-3 px-4">출금계좌</th>
-                                    <th class="py-3 px-4">결제일</th>
-                                    <th class="py-3 px-4">청구 이용기간</th>
-                                    <th class="py-3 px-4 text-right">목표 실적 (기준)</th>
-                                    <th class="py-3 px-4 text-right">관리</th>
-                                </tr>
-                            </thead>
-                            <tbody id="cardListBody" class="divide-y divide-gray-100"></tbody>
-                        </table>
-                    </div>
-                    <div id="cardCardList" class="md:hidden space-y-2.5"></div>
+                    <div id="cardGroupedList" class="space-y-2.5"></div>
                 </div>
 
                 <!-- (3) 대출 · 마이너스통장 -->
                 <div id="assetSection-debt" class="hidden space-y-4">
-                    <div class="bg-white p-4 rounded-2xl border border-blue-200">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 id="debtFormTitle" class="font-bold text-sm text-blue-900">대출 · 마이너스통장 신규 등록</h3>
-                            <button onclick="resetDebtForm()" id="debtCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                    <div id="debtFormCard" class="bg-white p-4 rounded-2xl border border-blue-200">
+                        <div class="flex justify-between items-center gap-2">
+                            <h3 id="debtFormTitle" class="font-bold text-sm text-blue-900 truncate">대출 · 마이너스통장 신규 등록</h3>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button onclick="resetDebtForm()" id="debtCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                                <button type="button" id="debtFormToggleBtn" onclick="toggleCollapsibleSection('debtFormBody', 'debtFormToggleBtn', '+ 신규 등록 ▼', '접기 ▲')" class="md:hidden px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 신규 등록 ▼</button>
+                            </div>
                         </div>
-                        <input type="hidden" id="editDebtId">
-                        <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
-                                <select id="debtOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                        <div id="debtFormBody" class="hidden md:block mt-3 pt-3 border-t border-gray-100">
+                            <input type="hidden" id="editDebtId">
+                            <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
+                                    <select id="debtOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">부채 종류</label>
+                                    <select id="debtType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white">
+                                        <option value="일반대출">일반대출 (주담대/신용 등)</option>
+                                        <option value="마이너스통장">마이너스통장</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">부채 이름</label>
+                                    <input type="text" id="debtName" placeholder="예: 주택담보대출" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">남은 원금/마통잔액 (원)</label>
+                                    <input type="text" inputmode="numeric" id="debtInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">연결 상환 계좌</label>
+                                    <select id="debtLinkedAccount" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white"></select>
+                                </div>
+                                <button onclick="saveDebtAsset()" id="debtSubmitBtn" class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">부채 저장하기</button>
                             </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">부채 종류</label>
-                                <select id="debtType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white">
-                                    <option value="일반대출">일반대출 (주담대/신용 등)</option>
-                                    <option value="마이너스통장">마이너스통장</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">부채 이름</label>
-                                <input type="text" id="debtName" placeholder="예: 주택담보대출" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">남은 원금/마통잔액 (원)</label>
-                                <input type="text" inputmode="numeric" id="debtInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">연결 상환 계좌</label>
-                                <select id="debtLinkedAccount" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white"></select>
-                            </div>
-                            <button onclick="saveDebtAsset()" id="debtSubmitBtn" class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">부채 저장하기</button>
                         </div>
                     </div>
-                    <div class="hidden md:block bg-white rounded-2xl border border-blue-200 overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-blue-50 text-blue-900 border-b border-blue-100">
-                                <tr>
-                                    <th class="py-3 px-4">소유자</th>
-                                    <th class="py-3 px-4">종류</th>
-                                    <th class="py-3 px-4">부채명</th>
-                                    <th class="py-3 px-4">연결계좌</th>
-                                    <th class="py-3 px-4 text-right">설정된 원금 / 잔액</th>
-                                    <th class="py-3 px-4 text-right">관리</th>
-                                </tr>
-                            </thead>
-                            <tbody id="debtListBody" class="divide-y divide-gray-100"></tbody>
-                        </table>
-                    </div>
-                    <div id="debtCardList" class="md:hidden space-y-2.5"></div>
+                    <div id="debtGroupedList" class="space-y-2.5"></div>
                 </div>
             </div>
 
-            <!-- [하위 5] 기념일 관리 -->
+            <!-- [하위 5] 기념일 관리 (모바일 폼 기본 접힘) -->
             <div id="sub6" class="sub-tab-content hidden box-slowpoke p-4 sm:p-6 rounded-3xl shadow-sm space-y-5">
                 <div class="border-b border-pink-200 pb-3">
                     <h2 class="title-font text-lg sm:text-xl text-pink-900">기념일 관리 (양력 · 음력 자동 변환)</h2>
                     <p class="text-xs text-gray-500 mt-1">생일·기념일을 등록하면 달력에 표시되며, 음력 기념일은 매년 양력으로 자동 변환됩니다.</p>
                 </div>
-                <div class="bg-white p-4 rounded-2xl border border-pink-200 space-y-3">
-                    <div class="flex justify-between items-center">
-                        <h3 id="annivFormTitle" class="font-bold text-sm text-pink-900">기념일 신규 등록</h3>
-                        <button onclick="resetAnnivForm()" id="annivCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                <div id="annivFormCard" class="bg-white p-4 rounded-2xl border border-pink-200">
+                    <div class="flex justify-between items-center gap-2">
+                        <h3 id="annivFormTitle" class="font-bold text-sm text-pink-900 truncate">기념일 신규 등록</h3>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button onclick="resetAnnivForm()" id="annivCancelBtn" class="hidden text-xs text-gray-500 underline">수정 취소</button>
+                            <button type="button" id="annivFormToggleBtn" onclick="toggleCollapsibleSection('annivFormBody', 'annivFormToggleBtn', '+ 신규 등록 ▼', '접기 ▲')" class="md:hidden px-2.5 py-1 bg-pink-50 border border-pink-200 text-pink-800 rounded-lg text-[11px] font-bold whitespace-nowrap">+ 신규 등록 ▼</button>
+                        </div>
                     </div>
-                    <input type="hidden" id="editAnnivId">
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                        <div class="md:col-span-2">
-                            <label class="block text-xs font-bold text-gray-600 mb-1">기념일 이름</label>
-                            <input type="text" id="annivName" placeholder="예: 어머니 생신, 결혼기념일" class="w-full p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-bold text-gray-600 mb-1">달력 기준</label>
-                            <select id="annivCalType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
-                                <option value="solar">양력</option>
-                                <option value="lunar">음력 (자동 양력변환)</option>
-                            </select>
-                        </div>
-                        <div class="grid grid-cols-2 gap-1.5">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">월</label>
-                                <select id="annivMonth" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                    <div id="annivFormBody" class="hidden md:block mt-3 pt-3 border-t border-gray-100">
+                        <input type="hidden" id="editAnnivId">
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-bold text-gray-600 mb-1">기념일 이름</label>
+                                <input type="text" id="annivName" placeholder="예: 어머니 생신, 결혼기념일" class="w-full p-2 border border-gray-300 rounded-xl text-xs focus:outline-none">
                             </div>
                             <div>
-                                <label class="block text-xs font-bold text-gray-600 mb-1">일</label>
-                                <select id="annivDay" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                <label class="block text-xs font-bold text-gray-600 mb-1">달력 기준</label>
+                                <select id="annivCalType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
+                                    <option value="solar">양력</option>
+                                    <option value="lunar">음력 (자동 양력변환)</option>
+                                </select>
                             </div>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">월</label>
+                                    <select id="annivMonth" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-600 mb-1">일</label>
+                                    <select id="annivDay" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
+                                </div>
+                            </div>
+                            <button onclick="saveAnniversary()" id="annivSubmitBtn" class="py-2 px-4 btn-pink rounded-xl text-xs shadow-sm">기념일 저장</button>
                         </div>
-                        <button onclick="saveAnniversary()" id="annivSubmitBtn" class="py-2 px-4 btn-pink rounded-xl text-xs shadow-sm">기념일 저장</button>
                     </div>
                 </div>
                 <div class="hidden md:block bg-white rounded-2xl border border-pink-200 overflow-x-auto">
@@ -1246,7 +1262,6 @@
                     <p class="text-xs text-gray-500 mt-1">매월 첫 접속 시 클라우드에 자동백업이 생성되며, JSON 백업 및 엑셀(.xlsx) 내보내기도 지원합니다.</p>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-                    <!-- 좌측: 클라우드 월초 자동백업 + JSON/엑셀 -->
                     <div class="space-y-4">
                         <div class="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200 space-y-3">
                             <div class="flex justify-between items-center border-b border-blue-100 pb-2">
@@ -1272,7 +1287,6 @@
                         </div>
                     </div>
 
-                    <!-- 우측: 엑셀 내보내기 + 데이터 초기화 -->
                     <div class="space-y-4">
                         <div class="bg-white p-4 sm:p-5 rounded-2xl border border-green-200 space-y-3">
                             <h3 class="font-bold text-sm text-green-800 border-b border-green-100 pb-2">가계부 내역 엑셀 다운로드 (.xlsx)</h3>

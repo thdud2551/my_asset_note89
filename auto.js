@@ -1,5 +1,5 @@
 // =========================================================
-// [3. 정기 지출] 전용 모듈 (소유자 · 일반대출 · 투자자산 · 정렬 · 모바일 카드)
+// [3. 정기 지출] 전용 모듈 (멀티 사용자 · 모바일 목록 접기 · 카드형 관리)
 // =========================================================
 let atYear = todayObj.getFullYear();
 let atMonth = todayObj.getMonth() + 1;
@@ -68,7 +68,7 @@ function getSpecificPendingAutoItemsForMonth(year, month) {
     (db.autoTransfers || []).forEach(at => {
         if (at.cycleType !== 'specific') return;
         if (!isAutoItemDueInMonth(at, year, month)) return;
-        if (currentGlobalUser !== '전체' && at.user !== currentGlobalUser) return;
+        if (!matchesGlobalUser(at.user)) return;
         if (findAppliedTxForAutoItem(at.id, ym)) return;
         const sched = getScheduledDateForAutoItem(at, year, month);
         const exp = getExpectedAmountForAutoItem(at, year, month);
@@ -102,7 +102,7 @@ function getAnnualSpecificExpenseTotal(year) {
     (db.autoTransfers || []).forEach(at => {
         if (at.active === false || at.cycleType !== 'specific') return;
         if (getTypeBehavior(at.type) !== 'expense') return;
-        if (currentGlobalUser !== '전체' && at.user !== currentGlobalUser) return;
+        if (!matchesGlobalUser(at.user)) return;
         const months = Array.isArray(at.months) ? at.months : [];
         months.forEach(m => {
             const ym = formatYM(year, m);
@@ -163,7 +163,7 @@ function renderTab4() {
     document.getElementById('atMonthTitle').textContent = `${atYear}년 ${atMonth}월 정기 지출`;
 
     const dueItems = (db.autoTransfers || []).filter(at => {
-        if (currentGlobalUser !== '전체' && at.user !== currentGlobalUser) return false;
+        if (!matchesGlobalUser(at.user)) return false;
         return isAutoItemDueInMonth(at, atYear, atMonth);
     }).map(at => {
         const sched = getScheduledDateForAutoItem(at, atYear, atMonth);
@@ -194,7 +194,7 @@ function renderTab4() {
 
     const endingItems = (db.autoTransfers || []).filter(at => {
         if (at.active === false || !at.endYM) return false;
-        if (currentGlobalUser !== '전체' && at.user !== currentGlobalUser) return false;
+        if (!matchesGlobalUser(at.user)) return false;
         return at.endYM === ym || at.endYM === nextYM;
     });
     const alertBox = document.getElementById('atEndingAlertBanner');
@@ -367,14 +367,25 @@ function cancelAutoTransferApply(txId) {
 }
 
 // =========================================================
-// 정기 항목 등록 · 수정 · 관리
+// 정기 항목 등록 · 수정 · 관리 (모바일 접기/펼치기 연동)
 // =========================================================
+function openAtFormFromHeader() {
+    const secBody = document.getElementById('atMasterSectionBody');
+    const isMobileHidden = secBody && secBody.classList.contains('hidden') && window.innerWidth < 768;
+    if (isMobileHidden) {
+        openCollapsibleSection('atMasterSectionBody', 'atMasterCollapseBtn', '접기 ▲');
+        toggleAtForm(true);
+    } else {
+        toggleAtForm();
+    }
+}
+
 function toggleAtForm(forceState) {
     atFormOpen = (typeof forceState === 'boolean') ? forceState : !atFormOpen;
     const wrap = document.getElementById('atFormCollapse');
     const btn = document.getElementById('atToggleFormBtn');
     if (wrap) wrap.classList.toggle('hidden', !atFormOpen);
-    if (btn) btn.textContent = atFormOpen ? '등록 폼 접기 ▲' : '+ 새 정기 항목 등록';
+    if (btn) btn.textContent = atFormOpen ? '등록 폼 접기 ▲' : '+ 새 정기 항목';
     if (atFormOpen) syncAtFormOptions();
 }
 
@@ -602,6 +613,7 @@ function handleAtSubmit(e) {
 function startEditAt(id) {
     const at = db.autoTransfers.find(a => a.id === id);
     if (!at) return;
+    openCollapsibleSection('atMasterSectionBody', 'atMasterCollapseBtn', '접기 ▲');
     toggleAtForm(true);
 
     document.getElementById('editAtId').value = at.id;
@@ -636,6 +648,9 @@ function startEditAt(id) {
     document.getElementById('atAmount').value = formatNumberToInput(at.amount);
     document.getElementById('atStartYM').value = at.startYM || formatYM(atYear, atMonth);
     document.getElementById('atEndYM').value = at.endYM || '';
+
+    const formWrap = document.getElementById('atFormCollapse');
+    if (formWrap) formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function resetAtForm() {
@@ -680,8 +695,11 @@ function renderAtMasterList() {
     if (!tbody && !cardList) return;
     const nowYM = formatYM(todayObj.getFullYear(), todayObj.getMonth() + 1);
 
-    let list = (db.autoTransfers || []).filter(at => currentGlobalUser === '전체' || at.user === currentGlobalUser);
-    list = list.filter(at => {
+    const allUserItems = (db.autoTransfers || []).filter(at => matchesGlobalUser(at.user));
+    const badgeEl = document.getElementById('atMasterTotalBadge');
+    if (badgeEl) badgeEl.textContent = `${allUserItems.length}건`;
+
+    let list = allUserItems.filter(at => {
         const isEnded = !!(at.endYM && at.endYM < nowYM);
         const isPaused = (at.active === false);
         if (atMasterFilter === 'active') return !isPaused && !isEnded;

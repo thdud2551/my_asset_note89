@@ -1,14 +1,18 @@
 // =========================================================
-// [5. 자산 현황] 전용 모듈 (실시간 잔액 · 카드미결제 · 투자평가 · 빈 달 제외 0기준선 추이)
+// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 멀티 사용자 · 빈 달 제외 추이)
 // =========================================================
 let asset5TrendMode = '6m'; // '6m' | 'year'
+let asset5ExpandedBank = {}; // key: 'cash' | 'voucher' | 'saving' | 'invest' | 'real'
+let asset5ExpandedDebt = {}; // key: 'loan' | 'card'
 
 const ASSET_GROUP_META = {
-    liquid: { label: '유동 자산 (통장·현금·상품권)', color: '#74C0FC', types: ['입출금통장', '현금', '선불·상품권'] },
-    saving: { label: '저축 자산 (예·적금)', color: '#63E6BE', types: ['예·적금'] },
-    invest: { label: '투자 자산 (주식·펀드·연금)', color: '#B197FC', types: ['투자'] },
-    real:   { label: '실물 자산 (부동산·보증금)', color: '#FFD43B', types: ['실물자산'] }
+    cash:    { label: '입출금·현금', short: '입출금·현금', color: '#74C0FC', types: ['입출금통장', '현금'] },
+    voucher: { label: '선불·상품권', short: '선불·상품권', color: '#FFA94D', types: ['선불·상품권'] },
+    saving:  { label: '예·적금', short: '예·적금', color: '#63E6BE', types: ['예·적금'] },
+    invest:  { label: '투자 (주식·펀드·연금)', short: '투자', color: '#B197FC', types: ['투자'] },
+    real:    { label: '실물자산 (부동산·보증금)', short: '실물자산', color: '#FFD43B', types: ['실물자산'] }
 };
+const ASSET_GROUP_ORDER = ['cash', 'voucher', 'saving', 'invest', 'real'];
 
 function formatManWonRounded(amt) {
     const man = Math.round((Number(amt) || 0) / 10000);
@@ -113,8 +117,10 @@ function computeAssetSnapshotAsOf(asOfDate) {
         }
     });
 
-    const matchOwner = (a) => (currentGlobalUser === '전체' || a.owner === currentGlobalUser);
-    const sortByAssetName = (x, y) => compareKorean(x.asset.name, y.asset.name) || (getOwnerRank(x.asset.owner) - getOwnerRank(y.asset.owner));
+    const sortByOwnerTypeName = (x, y) =>
+        (getOwnerRank(x.asset.owner) - getOwnerRank(y.asset.owner)) ||
+        (getAssetTypeRank(x.asset.type) - getAssetTypeRank(y.asset.type)) ||
+        compareKorean(x.asset.name, y.asset.name);
 
     const bankItems = [];
     const debtItems = [];
@@ -122,10 +128,10 @@ function computeAssetSnapshotAsOf(asOfDate) {
 
     let totalAssets = 0;
     let totalDebts = 0;
-    const groupTotals = { liquid: 0, saving: 0, invest: 0, real: 0 };
+    const groupTotals = { cash: 0, voucher: 0, saving: 0, invest: 0, real: 0 };
 
     (db.assets || []).forEach(a => {
-        if (!matchOwner(a)) return;
+        if (!matchesGlobalUser(a.owner)) return;
         if (a.group === 'bank') {
             const costBasis = bankCostMap[a.id] || 0;
             const isValuable = (a.type === '투자' || a.type === '실물자산');
@@ -133,8 +139,9 @@ function computeAssetSnapshotAsOf(asOfDate) {
             const currentVal = costBasis + valOffset;
             totalAssets += currentVal;
 
-            let gKey = 'liquid';
-            if (a.type === '예·적금') gKey = 'saving';
+            let gKey = 'cash';
+            if (a.type === '선불·상품권') gKey = 'voucher';
+            else if (a.type === '예·적금') gKey = 'saving';
             else if (a.type === '투자') gKey = 'invest';
             else if (a.type === '실물자산') gKey = 'real';
             groupTotals[gKey] += Math.max(0, currentVal);
@@ -151,9 +158,9 @@ function computeAssetSnapshotAsOf(asOfDate) {
         }
     });
 
-    bankItems.sort(sortByAssetName);
-    debtItems.sort(sortByAssetName);
-    cardDebtItems.sort(sortByAssetName);
+    bankItems.sort(sortByOwnerTypeName);
+    debtItems.sort(sortByOwnerTypeName);
+    cardDebtItems.sort(sortByOwnerTypeName);
 
     return {
         totalAssets,
@@ -167,8 +174,36 @@ function computeAssetSnapshotAsOf(asOfDate) {
 }
 
 // =========================================================
-// [5. 자산 현황] 화면 렌더링
+// [5. 자산 현황] 화면 렌더링 & 아코디언 토글
 // =========================================================
+function toggleAsset5BankGroup(gKey) {
+    asset5ExpandedBank[gKey] = !asset5ExpandedBank[gKey];
+    renderTab5();
+}
+
+function toggleAllAsset5BankGroups() {
+    const snap = computeAssetSnapshotAsOf(formatYMD(new Date()));
+    const presentKeys = ASSET_GROUP_ORDER.filter(k => snap.bankItems.some(it => it.groupKey === k));
+    const allOpen = presentKeys.length > 0 && presentKeys.every(k => !!asset5ExpandedBank[k]);
+    presentKeys.forEach(k => { asset5ExpandedBank[k] = !allOpen; });
+    renderTab5();
+}
+
+function toggleAsset5DebtGroup(dKey) {
+    asset5ExpandedDebt[dKey] = !asset5ExpandedDebt[dKey];
+    renderTab5();
+}
+
+function toggleAllAsset5DebtGroups() {
+    const snap = computeAssetSnapshotAsOf(formatYMD(new Date()));
+    const presentKeys = [];
+    if (snap.debtItems.length > 0) presentKeys.push('loan');
+    if (snap.cardDebtItems.length > 0) presentKeys.push('card');
+    const allOpen = presentKeys.length > 0 && presentKeys.every(k => !!asset5ExpandedDebt[k]);
+    presentKeys.forEach(k => { asset5ExpandedDebt[k] = !allOpen; });
+    renderTab5();
+}
+
 function setAsset5TrendMode(mode) {
     asset5TrendMode = mode;
     const b6 = document.getElementById('asset5Trend6m');
@@ -201,7 +236,9 @@ function renderTab5() {
     else diffEl.innerHTML = `<span class="text-gray-400">전월 말과 변동 없음</span>`;
 
     const ownerBadge = document.getElementById('asset5OwnerBadge');
-    if (ownerBadge) ownerBadge.textContent = currentGlobalUser === '전체' ? '전체 자산 기준' : `${currentGlobalUser} 소유 기준`;
+    if (ownerBadge) {
+        ownerBadge.textContent = isAllGlobalUsersSelected() ? '전체 자산 기준' : `${getGlobalUserShortLabel()} 소유 기준`;
+    }
 
     renderAsset5BankList(snap.bankItems);
     renderAsset5DebtList(snap.debtItems, snap.cardDebtItems);
@@ -211,21 +248,29 @@ function renderTab5() {
 
 function renderAsset5BankList(bankItems) {
     const container = document.getElementById('asset5BankSections');
+    const toggleBtn = document.getElementById('asset5BankToggleAllBtn');
     if (!container) return;
 
     if (bankItems.length === 0) {
+        if (toggleBtn) toggleBtn.classList.add('hidden');
         container.innerHTML = `<div class="bg-white p-8 rounded-2xl border border-blue-100 text-center text-xs text-gray-400">표시할 자산이 없습니다. [설정]에서 자산을 등록해 보세요.</div>`;
         return;
     }
 
-    const order = ['liquid', 'saving', 'invest', 'real'];
-    container.innerHTML = order.map(gKey => {
+    const presentKeys = ASSET_GROUP_ORDER.filter(k => bankItems.some(it => it.groupKey === k));
+    if (toggleBtn) {
+        toggleBtn.classList.remove('hidden');
+        const allOpen = presentKeys.every(k => !!asset5ExpandedBank[k]);
+        toggleBtn.textContent = allOpen ? '모두 접기' : '모두 펼치기';
+    }
+
+    container.innerHTML = presentKeys.map(gKey => {
         const list = bankItems.filter(it => it.groupKey === gKey);
-        if (list.length === 0) return '';
         const meta = ASSET_GROUP_META[gKey];
         const subTotal = list.reduce((s, x) => s + x.currentVal, 0);
+        const isOpen = !!asset5ExpandedBank[gKey];
 
-        const rows = list.map(({ asset, costBasis, valOffset, currentVal }) => {
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-blue-100 space-y-2">${list.map(({ asset, costBasis, valOffset, currentVal }) => {
             const isValuable = (asset.type === '투자' || asset.type === '실물자산');
             let profitHtml = '';
             if (asset.type === '투자' && valOffset !== 0) {
@@ -237,98 +282,129 @@ function renderAsset5BankList(bankItems) {
             }
 
             const actionBtn = isValuable
-                ? `<button onclick="openValuationModal('${asset.id}', ${costBasis}, ${currentVal})" class="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-[11px] font-bold whitespace-nowrap">평가액 갱신</button>`
-                : `<button onclick="openBalanceAdjustModal('${asset.id}', ${currentVal})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>`;
+                ? `<button onclick="event.stopPropagation(); openValuationModal('${asset.id}', ${costBasis}, ${currentVal})" class="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-[11px] font-bold whitespace-nowrap">평가액 갱신</button>`
+                : `<button onclick="event.stopPropagation(); openBalanceAdjustModal('${asset.id}', ${currentVal})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>`;
 
             return `
-                <div class="bg-white p-3.5 rounded-2xl border border-blue-100 flex flex-wrap justify-between items-center gap-2 text-xs">
-                    <div class="space-y-0.5 min-w-[160px]">
+                <div class="bg-blue-50/30 p-3 rounded-xl border border-blue-100 flex flex-wrap justify-between items-center gap-2 text-xs">
+                    <div class="space-y-0.5 min-w-[140px]">
                         <div class="flex items-center gap-1.5 flex-wrap">
                             ${getOwnerBadgeHtml(asset.owner)}
-                            <span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">${escHtml(asset.type)}</span>
+                            <span class="px-1.5 py-0.5 rounded bg-white text-blue-700 border border-blue-100 font-bold text-[10px]">${escHtml(asset.type)}</span>
                             <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
                         </div>
                         ${profitHtml}
                     </div>
-                    <div class="flex items-center gap-2.5 ml-auto">
+                    <div class="flex items-center gap-2 ml-auto">
                         <span class="font-bold text-sm text-gray-800 whitespace-nowrap">${currentVal.toLocaleString()}원</span>
                         ${actionBtn}
                     </div>
                 </div>`;
-        }).join('');
+        }).join('')}</div>` : '';
 
         return `
-            <div class="space-y-2">
-                <div class="flex justify-between items-center px-1">
-                    <span class="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                        <span class="w-2.5 h-2.5 rounded-full" style="background-color:${meta.color}"></span>
-                        ${meta.label}
-                    </span>
-                    <span class="text-xs font-bold text-blue-800 whitespace-nowrap">${subTotal.toLocaleString()}원</span>
+            <div class="bg-white p-3.5 rounded-2xl border border-blue-100 shadow-sm">
+                <div onclick="toggleAsset5BankGroup('${gKey}')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-3 h-3 rounded-full shrink-0" style="background-color:${meta.color}"></span>
+                        <span class="font-bold text-sm text-blue-900 truncate">${meta.label}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold shrink-0">${list.length}건</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="font-bold text-sm text-gray-800 whitespace-nowrap">${subTotal.toLocaleString()}원</span>
+                        <span class="text-[11px] text-blue-500 font-bold">${isOpen ? '▲' : '▼'}</span>
+                    </div>
                 </div>
-                <div class="space-y-2">${rows}</div>
+                ${rows}
             </div>`;
     }).join('');
 }
 
 function renderAsset5DebtList(debtItems, cardDebtItems) {
     const container = document.getElementById('asset5DebtSections');
+    const toggleBtn = document.getElementById('asset5DebtToggleAllBtn');
     if (!container) return;
 
     const loanTotal = debtItems.reduce((s, x) => s + x.balance, 0);
     const cardTotal = cardDebtItems.reduce((s, x) => s + x.unpaid, 0);
 
     if (debtItems.length === 0 && cardDebtItems.length === 0) {
+        if (toggleBtn) toggleBtn.classList.add('hidden');
         container.innerHTML = `<div class="bg-white p-8 rounded-2xl border border-pink-100 text-center text-xs text-gray-400">등록된 부채나 신용카드가 없습니다.</div>`;
         return;
     }
 
+    const presentKeys = [];
+    if (debtItems.length > 0) presentKeys.push('loan');
+    if (cardDebtItems.length > 0) presentKeys.push('card');
+    if (toggleBtn) {
+        toggleBtn.classList.remove('hidden');
+        const allOpen = presentKeys.every(k => !!asset5ExpandedDebt[k]);
+        toggleBtn.textContent = allOpen ? '모두 접기' : '모두 펼치기';
+    }
+
     let html = '';
     if (debtItems.length > 0) {
+        const isOpen = !!asset5ExpandedDebt.loan;
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${debtItems.map(({ asset, balance }) => `
+            <div class="bg-pink-50/30 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    ${getOwnerBadgeHtml(asset.owner)}
+                    <span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-800 font-bold text-[10px]">${escHtml(asset.type)}</span>
+                    <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
+                </div>
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${balance.toLocaleString()}원</span>
+                    <button onclick="event.stopPropagation(); openBalanceAdjustModal('${asset.id}', ${balance})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>
+                </div>
+            </div>`).join('')}</div>` : '';
+
         html += `
-            <div class="space-y-2">
-                <div class="flex justify-between items-center px-1">
-                    <span class="text-xs font-bold text-pink-900">대출 · 마이너스통장</span>
-                    <span class="text-xs font-bold text-rose-600 whitespace-nowrap">${loanTotal.toLocaleString()}원</span>
+            <div class="bg-white p-3.5 rounded-2xl border border-pink-100 shadow-sm">
+                <div onclick="toggleAsset5DebtGroup('loan')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-3 h-3 rounded-full shrink-0 bg-orange-400"></span>
+                        <span class="font-bold text-sm text-pink-900 truncate">대출 · 마이너스통장</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-50 text-pink-700 font-bold shrink-0">${debtItems.length}건</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${loanTotal.toLocaleString()}원</span>
+                        <span class="text-[11px] text-pink-500 font-bold">${isOpen ? '▲' : '▼'}</span>
+                    </div>
                 </div>
-                <div class="space-y-2">
-                    ${debtItems.map(({ asset, balance }) => `
-                        <div class="bg-white p-3.5 rounded-2xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
-                            <div class="flex items-center gap-1.5 flex-wrap">
-                                ${getOwnerBadgeHtml(asset.owner)}
-                                <span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-800 font-bold text-[10px]">${escHtml(asset.type)}</span>
-                                <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
-                            </div>
-                            <div class="flex items-center gap-2.5 ml-auto">
-                                <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${balance.toLocaleString()}원</span>
-                                <button onclick="openBalanceAdjustModal('${asset.id}',${balance})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>
-                            </div>
-                        </div>`).join('')}
-                </div>
+                ${rows}
             </div>`;
     }
 
     if (cardDebtItems.length > 0) {
+        const isOpen = !!asset5ExpandedDebt.card;
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${cardDebtItems.map(({ asset, unpaid }) => `
+            <div class="bg-pink-50/30 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    ${getOwnerBadgeHtml(asset.owner)}
+                    <span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">신용카드</span>
+                    <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
+                </div>
+                <div class="flex items-center gap-2 ml-auto">
+                    <span class="font-bold text-sm whitespace-nowrap ${unpaid > 0 ? 'text-rose-600' : 'text-gray-400'}">${unpaid.toLocaleString()}원</span>
+                    <button onclick="event.stopPropagation(); switchMainTab('tab2')" class="px-2 py-1 bg-white border border-pink-200 hover:bg-pink-50 text-pink-700 rounded-lg text-[10px] font-bold whitespace-nowrap">결제·출금</button>
+                </div>
+            </div>`).join('')}</div>` : '';
+
         html += `
-            <div class="space-y-2">
-                <div class="flex justify-between items-center px-1">
-                    <span class="text-xs font-bold text-pink-900">신용카드 미결제 금액 <span class="text-[10px] font-normal text-gray-400">(할부 잔액·리볼빙 포함)</span></span>
-                    <span class="text-xs font-bold text-rose-600 whitespace-nowrap">${cardTotal.toLocaleString()}원</span>
+            <div class="bg-white p-3.5 rounded-2xl border border-pink-100 shadow-sm">
+                <div onclick="toggleAsset5DebtGroup('card')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-3 h-3 rounded-full shrink-0 bg-pink-400"></span>
+                        <span class="font-bold text-sm text-pink-900 truncate">신용카드 미결제 금액</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-50 text-pink-700 font-bold shrink-0">${cardDebtItems.length}건</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${cardTotal.toLocaleString()}원</span>
+                        <span class="text-[11px] text-pink-500 font-bold">${isOpen ? '▲' : '▼'}</span>
+                    </div>
                 </div>
-                <div class="space-y-2">
-                    ${cardDebtItems.map(({ asset, unpaid }) => `
-                        <div class="bg-white p-3.5 rounded-2xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
-                            <div class="flex items-center gap-1.5 flex-wrap">
-                                ${getOwnerBadgeHtml(asset.owner)}
-                                <span class="px-1.5 py-0.5 rounded bg-pink-50 text-pink-700 font-bold text-[10px]">신용카드</span>
-                                <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
-                            </div>
-                            <div class="flex items-center gap-2 ml-auto">
-                                <span class="font-bold text-sm whitespace-nowrap ${unpaid > 0 ? 'text-rose-600' : 'text-gray-400'}">${unpaid.toLocaleString()}원</span>
-                                <button onclick="switchMainTab('tab2')" class="px-2 py-1 bg-pink-50 hover:bg-pink-100 text-pink-700 rounded-lg text-[10px] font-bold whitespace-nowrap">결제·출금</button>
-                            </div>
-                        </div>`).join('')}
-                </div>
+                ${rows}
             </div>`;
     }
 
@@ -350,7 +426,7 @@ function renderAsset5DonutChart(groupTotals, totalAssets) {
         return;
     }
 
-    const entries = Object.keys(ASSET_GROUP_META)
+    const entries = ASSET_GROUP_ORDER
         .map(k => ({ key: k, ...ASSET_GROUP_META[k], val: groupTotals[k] || 0 }))
         .filter(x => x.val > 0);
 
@@ -369,7 +445,7 @@ function renderAsset5DonutChart(groupTotals, totalAssets) {
             <div class="flex justify-between items-center text-xs bg-white p-2 rounded-xl border border-amber-100">
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="w-3 h-3 rounded-full shrink-0" style="background-color:${e.color}"></span>
-                    <span class="font-bold text-gray-700 truncate">${e.label.split(' ')[0]}</span>
+                    <span class="font-bold text-gray-700 truncate">${e.short}</span>
                     <span class="text-[11px] text-gray-400">${pct}%</span>
                 </div>
                 <span class="font-bold text-gray-800 shrink-0">${e.val.toLocaleString()}원</span>

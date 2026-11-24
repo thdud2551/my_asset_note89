@@ -1,5 +1,5 @@
 // =========================================================
-// [4. 지출 분석] 전용 모듈 (고정비·변동비 필터 + 카드별 실적 기준 + 빈 달 제외 추이)
+// [4. 지출 분석] 전용 모듈 (멀티 사용자 · 실적관리 카드 필터 · 빈 달 제외 추이)
 // =========================================================
 const DONUT_PALETTE = [
     '#FF8787', '#FFD43B', '#74C0FC', '#63E6BE', '#B197FC',
@@ -95,7 +95,7 @@ function getSpendItemsForMonth(year, month, basis) {
 
     if (basis === 'consume') {
         db.transactions.forEach(t => {
-            if (currentGlobalUser !== '전체' && t.user !== currentGlobalUser) return;
+            if (!matchesGlobalUser(t.user)) return;
             if (getTypeBehavior(t.type) !== 'expense') return;
             if (t.date < monthStart || t.date > monthEnd) return;
             const mId = resolveToAssetId(t.method);
@@ -110,7 +110,7 @@ function getSpendItemsForMonth(year, month, basis) {
         });
     } else {
         db.transactions.forEach(t => {
-            if (currentGlobalUser !== '전체' && t.user !== currentGlobalUser) return;
+            if (!matchesGlobalUser(t.user)) return;
             if (getTypeBehavior(t.type) !== 'expense') return;
             const mId = resolveToAssetId(t.method);
             if (creditCardIds.has(mId)) return;
@@ -469,12 +469,15 @@ function renderSum3MethodBars(items, totalSpend) {
 
 function renderSum3CardPerf() {
     const cards = sortAssetsByName(
-        db.assets.filter(a => a.group === 'card' && (currentGlobalUser === '전체' || a.owner === currentGlobalUser))
+        db.assets.filter(a => a.group === 'card' && a.trackPerf !== false && matchesGlobalUser(a.owner))
     );
     const el = document.getElementById('sum3CardPerfList');
     const isYear = (sum3Mode === 'year');
-    document.getElementById('sum3CardPerfPeriod').textContent = isYear ? `${sum3Year}년 연간 누적 기준` : '카드별 실적 기준 적용';
-    if (cards.length === 0) { el.innerHTML = `<div class="text-xs text-gray-400 py-4 text-center bg-white rounded-xl">해당 사용자의 등록된 카드가 없습니다.</div>`; return; }
+    document.getElementById('sum3CardPerfPeriod').textContent = isYear ? `${sum3Year}년 연간 누적 기준` : '실적 관리 카드 기준';
+    if (cards.length === 0) {
+        el.innerHTML = `<div class="text-xs text-gray-400 py-4 text-center bg-white rounded-xl">실적 달성률을 표시할 카드가 없습니다.<br><span class="text-[11px]">[설정 → 4. 자산·카드·부채]에서 카드별 표시 여부를 설정할 수 있습니다.</span></div>`;
+        return;
+    }
 
     el.innerHTML = cards.map(c => {
         let periodStart, periodEnd, periodLabel;
