@@ -114,14 +114,14 @@
                     </div>
                     <form id="txForm" onsubmit="handleTxSubmit(event)" class="space-y-3 lg:block">
                         <input type="hidden" id="editTxId">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div class="grid grid-cols-2 gap-2.5">
                             <div class="min-w-0">
                                 <label class="block text-xs font-bold text-gray-600 mb-1">날짜</label>
-                                <input type="date" id="txDate" required class="w-full min-w-0 max-w-full p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold focus:outline-none">
+                                <input type="date" id="txDate" required class="w-full min-w-0 max-w-full h-9 px-2 bg-white border border-amber-200 rounded-xl text-xs font-bold focus:outline-none">
                             </div>
                             <div class="min-w-0">
                                 <label class="block text-xs font-bold text-gray-600 mb-1">사용자</label>
-                                <select id="txUser" onchange="onTxUserChange()" class="w-full min-w-0 p-2 bg-white border border-amber-200 rounded-xl text-xs font-bold"></select>
+                                <select id="txUser" onchange="onTxUserChange()" class="w-full min-w-0 h-9 px-2 bg-white border border-amber-200 rounded-xl text-xs font-bold"></select>
                             </div>
                         </div>
                         <div>
