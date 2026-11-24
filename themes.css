@@ -288,7 +288,7 @@ body {
         font-size: 8px !important;
     }
 }
-/* 아이폰(iOS) 날짜·월 입력칸 크기 맞춤 및 왼쪽 정렬 */
+/* 아이폰(iOS) 날짜·월 입력칸 크기 맞춤 및 왼쪽 가운데 정렬 */
 input[type="date"],
 input[type="month"] {
     -webkit-appearance: none;
@@ -297,15 +297,19 @@ input[type="month"] {
     min-width: 0;
     max-width: 100%;
     min-height: 36px;
+    display: inline-flex;
+    align-items: center;
 }
 
 input[type="date"].w-full,
 input[type="month"].w-full {
-    display: block;
+    display: flex;
+    align-items: center;
     width: 100%;
 }
 
 input[type="date"]::-webkit-date-and-time-value,
 input[type="month"]::-webkit-date-and-time-value {
     text-align: left;
+    margin: 0;
 }
