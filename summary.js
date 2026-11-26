@@ -468,9 +468,9 @@ function renderSum3MethodBars(items, totalSpend) {
 }
 
 function renderSum3CardPerf() {
-    const cards = sortAssetsByName(
-        db.assets.filter(a => a.group === 'card' && a.trackPerf !== false && matchesGlobalUser(a.owner))
-    );
+    const cards = db.assets
+        .filter(a => a.group === 'card' && a.trackPerf !== false && matchesGlobalUser(a.owner))
+        .sort((a, b) => (getOwnerRank(a.owner) - getOwnerRank(b.owner)) || compareKorean(a.name, b.name));
     const el = document.getElementById('sum3CardPerfList');
     const isYear = (sum3Mode === 'year');
     document.getElementById('sum3CardPerfPeriod').textContent = isYear ? `${sum3Year}년 연간 누적 기준` : '실적 관리 카드 기준';
@@ -579,9 +579,9 @@ function openMonthlyBudgetModal() {
         <p class="text-xs text-gray-500">이 달에만 예산을 다르게 잡고 싶을 때 사용합니다. (기본 월 예산: ${defaultAmt.toLocaleString()}원)</p>
         <div class="space-y-3 text-xs pt-1">
             <div><label class="block font-bold text-gray-600 mb-1">${sum3Month}월 목표 지출 예산 (원)</label>
-                <input type="text" inputmode="numeric" id="modalMonthBudgetAmt" oninput="formatCommaInput(this)" value="${formatNumberToInput(cur.amount, true)}" class="w-full p-2.5 border border-amber-300 rounded-xl text-sm font-bold text-right"></div>
+                <input type="text" inputmode="numeric" id="modalMonthBudgetAmt" onfocus="if(this.value==='0') this.value='';" oninput="formatCommaInput(this)" value="${formatNumberToInput(cur.amount, true)}" class="w-full p-2.5 border border-amber-300 rounded-xl text-sm font-bold text-right"></div>
             <div><label class="block font-bold text-gray-600 mb-1">메모 (선택)</label>
-                <input type="text" id="modalMonthBudgetMemo" value="${escHtml(cur.memo)}" placeholder="예: 부모님 용돈 50만 원 포함" class="w-full p-2.5 border border-gray-300 rounded-xl text-xs"></div>
+                <input type="text" id="modalMonthBudgetMemo" lang="ko" autocapitalize="off" autocorrect="off" spellcheck="false" style="ime-mode:active;" value="${escHtml(cur.memo)}" placeholder="예: 부모님 용돈 50만 원 포함" class="w-full p-2.5 border border-gray-300 rounded-xl text-xs"></div>
         </div>
         <div class="flex justify-between items-center pt-2">
             ${cur.isCustom ? `<button onclick="resetMonthlyBudgetOverride('${ym}')" class="text-xs text-gray-500 underline font-bold">기본 예산으로 되돌리기</button>` : `<span></span>`}

@@ -308,7 +308,7 @@ document.addEventListener('click', (e) => {
 });
 
 // =========================================================
-// 공용 접기/펼치기 헬퍼 (모바일 폼 · 목록용)
+// 공용 접기/펼치기 헬퍼 (PC·모바일 폼 · 목록용)
 // =========================================================
 function toggleCollapsibleSection(bodyId, btnId, closedLabel, openLabel) {
     const body = document.getElementById(bodyId);
@@ -534,12 +534,54 @@ function renderPendingDueCardsHtml(dayDues, targetY, targetM) {
 }
 
 // =========================================================
-// 공용 유틸리티 및 테마 적용
+// 공용 유틸리티 · 커서 유지 숫자 포맷 · 한글 입력 힌트 · 테마
 // =========================================================
 function formatCommaInput(el) {
-    const raw = el.value.replace(/[^0-9]/g, '');
-    el.value = raw ? Number(raw).toLocaleString() : '';
+    const oldVal = el.value;
+    const selStart = el.selectionStart;
+    let digitsBeforeCursor = 0;
+    if (typeof selStart === 'number') {
+        for (let i = 0; i < selStart; i++) {
+            if (/[0-9]/.test(oldVal[i])) digitsBeforeCursor++;
+        }
+    }
+
+    const raw = oldVal.replace(/[^0-9]/g, '');
+    const formatted = raw ? Number(raw).toLocaleString() : '';
+    el.value = formatted;
+
+    if (typeof selStart === 'number' && typeof el.setSelectionRange === 'function') {
+        const cleanNumStr = raw ? String(Number(raw)) : '';
+        const strippedZeros = raw.length - cleanNumStr.length;
+        const targetDigits = Math.max(0, digitsBeforeCursor - strippedZeros);
+        let newPos = 0, seenDigits = 0;
+        while (newPos < formatted.length && seenDigits < targetDigits) {
+            if (/[0-9]/.test(formatted[newPos])) seenDigits++;
+            newPos++;
+        }
+        try { el.setSelectionRange(newPos, newPos); } catch (e) {}
+    }
 }
+
+function clearNumericInput(inputId, callback) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.value = '';
+    el.focus();
+    if (typeof callback === 'function') callback();
+}
+
+function applyKoreanInputHints(root = document) {
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+    root.querySelectorAll('input[type="text"]:not([inputmode="numeric"])').forEach(inp => {
+        inp.setAttribute('lang', 'ko');
+        inp.setAttribute('autocapitalize', 'off');
+        inp.setAttribute('autocorrect', 'off');
+        inp.setAttribute('spellcheck', 'false');
+        inp.style.imeMode = 'active';
+    });
+}
+
 function parseCommaNumber(val) {
     const raw = String(val || '').replace(/[^0-9]/g, '');
     return raw ? Number(raw) : 0;
@@ -715,6 +757,7 @@ function renderAll() {
     if (typeof renderTab3 === 'function') renderTab3();
     if (typeof renderTab4 === 'function') renderTab4();
     if (typeof renderTab5 === 'function') renderTab5();
+    applyKoreanInputHints(document);
 }
 
 // =========================================================
@@ -1317,9 +1360,11 @@ function renderCfCardBillingBoxes() {
     const chkEl = document.getElementById('cfHideZeroCardsChk');
     if (chkEl) chkEl.checked = cfHideZeroCards;
 
-    const allCards = sortAssetsByName(db.assets.filter(a =>
-        a.group === 'card' && a.type === '신용카드' && matchesGlobalUser(a.owner)
-    ));
+    // 사용자순 -> 카드명(가나다)순 정렬
+    const allCards = db.assets
+        .filter(a => a.group === 'card' && a.type === '신용카드' && matchesGlobalUser(a.owner))
+        .sort((a, b) => (getOwnerRank(a.owner) - getOwnerRank(b.owner)) || compareKorean(a.name, b.name));
+
     const bills = allCards.map(c => computeCardBillForMonth(c, cfYear, cfMonth, false));
     const visibleBills = cfHideZeroCards
         ? bills.filter(b => b.grossAmount > 0 || b.remainingAmount > 0 || !!b.settlement)
@@ -1492,7 +1537,12 @@ function openAmountPrepayModal(cardId) {
         <div class="space-y-3 text-xs pt-1">
             <div><label class="block font-bold text-gray-600 mb-1">선결제 출금일</label><input type="date" id="amtPrepayDate" value="${formatYMD(new Date())}" class="w-full p-2 border border-gray-300 rounded-xl font-bold"></div>
             <div><label class="block font-bold text-gray-600 mb-1">출금 계좌</label><select id="amtPrepayAcc" class="w-full p-2 border border-gray-300 rounded-xl bg-white">${getBankAccountOptionsHtml(card.linkedAccount)}</select></div>
-            <div><label class="block font-bold text-gray-600 mb-1">선결제할 금액 (원)</label><input type="text" inputmode="numeric" id="amtPrepayVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(bill.remainingAmount)}" class="w-full p-2 border border-orange-300 rounded-xl text-sm font-bold text-right"></div>
+            <div><label class="block font-bold text-gray-600 mb-1">선결제할 금액 (원)</label>
+                <div class="relative">
+                    <input type="text" inputmode="numeric" id="amtPrepayVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(bill.remainingAmount)}" class="w-full p-2 pr-8 border border-orange-300 rounded-xl text-sm font-bold text-right">
+                    <button type="button" onclick="clearNumericInput('amtPrepayVal')" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+                </div>
+            </div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
             <button onclick="openCardDetailModal('${cardId}')" class="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs">뒤로</button>
@@ -1524,12 +1574,20 @@ function openCardSettleModal(cardId) {
                 <div><label class="block font-bold text-gray-600 mb-1">출금 계좌</label><select id="settleAcc" class="w-full p-2 border border-gray-300 rounded-xl bg-white">${getBankAccountOptionsHtml(card.linkedAccount)}</select></div>
             </div>
             <div><label class="block font-bold text-gray-600 mb-1">실제 통장 출금액 (원)</label>
-                <input type="text" inputmode="numeric" id="settleActual" oninput="formatCommaInput(this); updateSettleDiffPreview(${bill.remainingAmount})" value="${formatNumberToInput(bill.remainingAmount, true)}" class="w-full p-2 border border-pink-300 rounded-xl text-sm font-bold text-right">
+                <div class="relative">
+                    <input type="text" inputmode="numeric" id="settleActual" oninput="formatCommaInput(this); updateSettleDiffPreview(${bill.remainingAmount})" value="${formatNumberToInput(bill.remainingAmount, true)}" placeholder="금액 입력" class="w-full p-2 pr-8 border border-pink-300 rounded-xl text-sm font-bold text-right">
+                    <button type="button" onclick="clearNumericInput('settleActual', () => updateSettleDiffPreview(${bill.remainingAmount}))" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+                </div>
                 <div id="settleDiffPreview" class="text-[11px] text-gray-500 mt-1">청구 원금과 동일합니다.</div>
             </div>
             <div class="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
                 <label class="flex items-center space-x-2 cursor-pointer"><input type="checkbox" id="settleUseRevolving" onchange="document.getElementById('settleRevBox').classList.toggle('hidden', !this.checked); updateSettleDiffPreview(${bill.remainingAmount})"><span class="font-bold text-gray-700">리볼빙(일부결제 이월) 적용</span></label>
-                <div id="settleRevBox" class="hidden"><label class="block text-[11px] text-gray-500 mb-1">이월할 리볼빙 금액 (원)</label><input type="text" inputmode="numeric" id="settleRevAmt" oninput="formatCommaInput(this); updateSettleDiffPreview(${bill.remainingAmount})" value="0" class="w-full p-2 bg-white border border-gray-300 rounded-lg text-xs font-bold text-right"></div>
+                <div id="settleRevBox" class="hidden"><label class="block text-[11px] text-gray-500 mb-1">이월할 리볼빙 금액 (원)</label>
+                    <div class="relative">
+                        <input type="text" inputmode="numeric" id="settleRevAmt" oninput="formatCommaInput(this); updateSettleDiffPreview(${bill.remainingAmount})" value="0" placeholder="0" class="w-full p-2 pr-8 bg-white border border-gray-300 rounded-lg text-xs font-bold text-right">
+                        <button type="button" onclick="clearNumericInput('settleRevAmt', () => updateSettleDiffPreview(${bill.remainingAmount}))" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
@@ -1729,7 +1787,12 @@ function renderCfListView(passedEntries) {
     }).join('');
 }
 
-function openCustomModal(html) { document.getElementById('customModalBody').innerHTML = html; document.getElementById('customModal').classList.remove('hidden'); }
+function openCustomModal(html) {
+    const body = document.getElementById('customModalBody');
+    body.innerHTML = html;
+    applyKoreanInputHints(body);
+    document.getElementById('customModal').classList.remove('hidden');
+}
 function closeCustomModal() { document.getElementById('customModal').classList.add('hidden'); }
 
 // =========================================================
@@ -2564,7 +2627,16 @@ function resetAllFactory() {
     }
 }
 
+// 숫자 입력칸 포커스 시 값이 '0'이면 자동으로 비워 오타 방지
+document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (el && el.tagName === 'INPUT' && el.getAttribute('inputmode') === 'numeric' && el.value === '0') {
+        el.value = '';
+    }
+});
+
 window.addEventListener('DOMContentLoaded', () => {
     initDropdowns();
     renderAll();
+    applyKoreanInputHints(document);
 });

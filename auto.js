@@ -1,11 +1,28 @@
 // =========================================================
-// [3. 정기 지출] 전용 모듈 (멀티 사용자 · 모바일 목록 접기 · 카드형 관리)
+// [3. 정기 지출] 전용 모듈 (미반영/반영완료 분리 · PC/모바일 아코디언 · 4단계 정렬)
 // =========================================================
 let atYear = todayObj.getFullYear();
 let atMonth = todayObj.getMonth() + 1;
 let atMasterFilter = 'active'; // 'all' | 'active' | 'paused' | 'ended'
 let atFormOpen = false;
+let atAppliedSectionOpen = false;
 let atSelectedMonths = [];
+
+function getAtTypeRank(typeName) {
+    const idx = (db.txTypes || []).findIndex(t => t.name === typeName);
+    return idx >= 0 ? idx : 999;
+}
+
+// 정렬 통일: 사용자 -> 구분 -> 분류(대분류 -> 소분류) -> 항목 이름순
+function compareAutoTransferItems(a, b) {
+    return (
+        (getOwnerRank(a.user) - getOwnerRank(b.user)) ||
+        (getAtTypeRank(a.type) - getAtTypeRank(b.type)) ||
+        compareKorean(a.catMain || '', b.catMain || '') ||
+        compareKorean(a.catSub || '', b.catSub || '') ||
+        compareKorean(a.name || '', b.name || '')
+    );
+}
 
 function adjustToNextBusinessDay(dateStr) {
     let cand = dateStr;
@@ -154,6 +171,14 @@ function setAtMasterFilter(filter) {
     renderAtMasterList();
 }
 
+function toggleAtAppliedSection() {
+    atAppliedSectionOpen = !atAppliedSectionOpen;
+    const body = document.getElementById('atAppliedListWrap');
+    const icon = document.getElementById('atAppliedToggleIcon');
+    if (body) body.classList.toggle('hidden', !atAppliedSectionOpen);
+    if (icon) icon.textContent = atAppliedSectionOpen ? '접기 ▲' : '펼치기 ▼';
+}
+
 function renderTab4() {
     if (!document.getElementById('atMonthTitle')) return;
     const ym = formatYM(atYear, atMonth);
@@ -170,7 +195,7 @@ function renderTab4() {
         const applied = findAppliedTxForAutoItem(at.id, ym);
         const exp = getExpectedAmountForAutoItem(at, atYear, atMonth);
         return { at, sched, applied, exp };
-    }).sort((a, b) => a.sched.date.localeCompare(b.sched.date) || compareKorean(a.at.name, b.at.name));
+    }).sort((a, b) => compareAutoTransferItems(a.at, b.at));
 
     let sumFixedExp = 0, sumTransfer = 0, doneCount = 0;
     dueItems.forEach(({ at, applied, exp }) => {
@@ -214,12 +239,28 @@ function renderTab4() {
     renderAtMasterList();
 }
 
+function buildAtItemBadgesHtml(at, sched, applied, exp, ym) {
+    const isEndingThisMonth = (at.endYM === ym);
+    const isSpecific = (at.cycleType === 'specific');
+    return [
+        isSpecific
+            ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">특정월</span>`
+            : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">매월</span>`,
+        sched.shifted ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">영업일 보정</span>` : '',
+        (!applied && exp.source === 'prevYear') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">전년 동월 기준</span>` : '',
+        (!applied && exp.source === 'blank') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">변동 · 직접 입력</span>` : '',
+        (Number(at.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월 할부</span>` : '',
+        isEndingThisMonth ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">이번 달 종료</span>` : ''
+    ].filter(Boolean).join(' ');
+}
+
 function renderAtMonthlyExecutionList(dueItems, ym) {
     const container = document.getElementById('atExecutionList');
     const selectAllWrap = document.getElementById('atSelectAllWrap');
-    const pendingCount = dueItems.filter(x => !x.applied).length;
+    const pendingItems = dueItems.filter(x => !x.applied);
+    const appliedItems = dueItems.filter(x => !!x.applied);
 
-    if (selectAllWrap) selectAllWrap.classList.toggle('hidden', pendingCount === 0);
+    if (selectAllWrap) selectAllWrap.classList.toggle('hidden', pendingItems.length === 0);
     const selectAllChk = document.getElementById('atSelectAllChk');
     if (selectAllChk) selectAllChk.checked = false;
 
@@ -228,35 +269,72 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
         return;
     }
 
-    container.innerHTML = dueItems.map(({ at, sched, applied, exp }) => {
-        const b = getTypeBehavior(at.type);
-        const isTr = (b === 'transfer' || b === 'voucher');
-        const methodText = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
-        const isEndingThisMonth = (at.endYM === ym);
-        const isSpecific = (at.cycleType === 'specific');
+    let pendingHtml = '';
+    if (pendingItems.length === 0) {
+        pendingHtml = `
+            <div class="bg-green-50/70 p-5 rounded-2xl border border-green-200 text-center text-xs font-bold text-green-800">
+                이번 달 예정된 정기 지출·이체를 모두 반영했습니다.
+            </div>`;
+    } else {
+        const pendingCards = pendingItems.map(({ at, sched, applied, exp }) => {
+            const b = getTypeBehavior(at.type);
+            const isTr = (b === 'transfer' || b === 'voucher');
+            const methodText = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
+            const badges = buildAtItemBadgesHtml(at, sched, applied, exp, ym);
+            const initVal = exp.amount !== null ? formatNumberToInput(exp.amount) : '';
 
-        const badges = [
-            isSpecific
-                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">특정월</span>`
-                : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">매월</span>`,
-            sched.shifted ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">영업일 보정</span>` : '',
-            (!applied && exp.source === 'prevYear') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">전년 동월 기준</span>` : '',
-            (!applied && exp.source === 'blank') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">변동 · 직접 입력</span>` : '',
-            (Number(at.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월 할부</span>` : '',
-            isEndingThisMonth ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">이번 달 종료</span>` : ''
-        ].filter(Boolean).join(' ');
-
-        if (applied) {
             return `
-                <div class="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-200 flex flex-wrap justify-between items-center gap-3 text-xs">
+                <div class="bg-white p-3.5 rounded-2xl border border-orange-200 flex flex-wrap justify-between items-center gap-3 text-xs shadow-sm">
+                    <div class="flex items-start gap-2.5 min-w-[210px] flex-1">
+                        <input type="checkbox" class="at-bulk-chk mt-1 rounded accent-orange-500" value="${at.id}">
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                ${getOwnerBadgeHtml(at.user)}
+                                <span class="font-bold text-gray-800 text-sm">${escHtml(at.name)}</span>
+                                ${badges}
+                            </div>
+                            <div class="text-[11px] text-gray-500">
+                                ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''}) · ${escHtml(methodText)}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 ml-auto">
+                        <input type="date" id="atExecDate_${at.id}" value="${sched.date}" class="p-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
+                        <input type="text" inputmode="numeric" id="atExecAmt_${at.id}" onfocus="if(this.value==='0') this.value='';" oninput="formatCommaInput(this)" value="${initVal}" placeholder="금액 입력" class="w-28 p-1.5 bg-white border border-orange-300 rounded-xl text-xs font-bold text-right">
+                        <button onclick="applySingleAutoTransfer('${at.id}')" class="px-3.5 py-1.5 btn-orange rounded-xl text-xs shadow-sm whitespace-nowrap">반영</button>
+                    </div>
+                </div>`;
+        }).join('');
+
+        pendingHtml = `
+            <div class="space-y-2.5">
+                <div class="flex items-center justify-between px-1">
+                    <span class="text-xs font-bold text-orange-900">미반영 목록 <span class="ml-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-800 text-[10px]">${pendingItems.length}건</span></span>
+                </div>
+                ${pendingCards}
+            </div>`;
+    }
+
+    let appliedHtml = '';
+    if (appliedItems.length > 0) {
+        const appliedSum = appliedItems.reduce((s, x) => s + (Number(x.applied.amount) || 0), 0);
+        const appliedCards = appliedItems.map(({ at, sched, applied, exp }) => {
+            const b = getTypeBehavior(at.type);
+            const isTr = (b === 'transfer' || b === 'voucher');
+            const methodText = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
+            const badges = buildAtItemBadgesHtml(at, sched, applied, exp, ym);
+
+            return `
+                <div class="bg-gray-50/90 p-3.5 rounded-2xl border border-gray-200 flex flex-wrap justify-between items-center gap-3 text-xs opacity-80 hover:opacity-100 transition">
                     <div class="space-y-1 min-w-[200px] flex-1">
                         <div class="flex items-center gap-1.5 flex-wrap">
                             <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[10px]">반영 완료</span>
+                            ${getOwnerBadgeHtml(at.user)}
                             <span class="font-bold text-gray-800 text-sm">${escHtml(at.name)}</span>
                             ${badges}
                         </div>
                         <div class="text-[11px] text-gray-500">
-                            ${applied.date} · ${escHtml(at.user)} · ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''}) · ${escHtml(methodText)}
+                            ${applied.date} · ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''}) · ${escHtml(methodText)}
                         </div>
                     </div>
                     <div class="flex items-center gap-2.5 ml-auto">
@@ -264,30 +342,25 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
                         <button onclick="cancelAutoTransferApply('${applied.id}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded-xl text-[11px] font-bold">반영 취소</button>
                     </div>
                 </div>`;
-        }
+        }).join('');
 
-        const initVal = exp.amount !== null ? formatNumberToInput(exp.amount) : '';
-        return `
-            <div class="bg-white p-3.5 rounded-2xl border border-orange-200 flex flex-wrap justify-between items-center gap-3 text-xs shadow-sm">
-                <div class="flex items-start gap-2.5 min-w-[210px] flex-1">
-                    <input type="checkbox" class="at-bulk-chk mt-1 rounded accent-orange-500" value="${at.id}">
-                    <div class="space-y-1">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                            <span class="font-bold text-gray-800 text-sm">${escHtml(at.name)}</span>
-                            ${badges}
-                        </div>
-                        <div class="text-[11px] text-gray-500">
-                            ${escHtml(at.user)} · ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''}) · ${escHtml(methodText)}
-                        </div>
+        appliedHtml = `
+            <div class="pt-2 border-t border-orange-200/70">
+                <div onclick="toggleAtAppliedSection()" class="flex justify-between items-center gap-2 px-3.5 py-2.5 bg-white/80 hover:bg-white rounded-2xl border border-gray-200 cursor-pointer select-none transition">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[11px] shrink-0">반영완료</span>
+                        <span class="text-xs font-bold text-gray-700 whitespace-nowrap">${appliedItems.length}건</span>
+                        <span class="text-[11px] text-gray-400 truncate">합계 ${appliedSum.toLocaleString()}원</span>
                     </div>
+                    <span id="atAppliedToggleIcon" class="text-[11px] font-bold text-gray-500 shrink-0 whitespace-nowrap">${atAppliedSectionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
                 </div>
-                <div class="flex flex-wrap items-center gap-2 ml-auto">
-                    <input type="date" id="atExecDate_${at.id}" value="${sched.date}" class="p-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
-                    <input type="text" inputmode="numeric" id="atExecAmt_${at.id}" oninput="formatCommaInput(this)" value="${initVal}" placeholder="금액 입력" class="w-28 p-1.5 bg-white border border-orange-300 rounded-xl text-xs font-bold text-right">
-                    <button onclick="applySingleAutoTransfer('${at.id}')" class="px-3.5 py-1.5 btn-orange rounded-xl text-xs shadow-sm whitespace-nowrap">반영</button>
+                <div id="atAppliedListWrap" class="${atAppliedSectionOpen ? '' : 'hidden'} space-y-2 pt-2.5">
+                    ${appliedCards}
                 </div>
             </div>`;
-    }).join('');
+    }
+
+    container.innerHTML = `<div class="space-y-4">${pendingHtml}${appliedHtml}</div>`;
 }
 
 function toggleSelectAllAt(checked) {
@@ -367,12 +440,11 @@ function cancelAutoTransferApply(txId) {
 }
 
 // =========================================================
-// 정기 항목 등록 · 수정 · 관리 (모바일 접기/펼치기 연동)
+// 정기 항목 등록 · 수정 · 관리 (PC·모바일 공통 접기/펼치기 연동)
 // =========================================================
 function openAtFormFromHeader() {
     const secBody = document.getElementById('atMasterSectionBody');
-    const isMobileHidden = secBody && secBody.classList.contains('hidden') && window.innerWidth < 768;
-    if (isMobileHidden) {
+    if (secBody && secBody.classList.contains('hidden')) {
         openCollapsibleSection('atMasterSectionBody', 'atMasterCollapseBtn', '접기 ▲');
         toggleAtForm(true);
     } else {
@@ -708,20 +780,8 @@ function renderAtMasterList() {
         return true;
     });
 
-    // 매월(날짜순) 먼저 -> 특정월(월·날짜순) -> 같은 날이면 가나다순
-    list.sort((a, b) => {
-        const aSpec = a.cycleType === 'specific' ? 1 : 0;
-        const bSpec = b.cycleType === 'specific' ? 1 : 0;
-        if (aSpec !== bSpec) return aSpec - bSpec;
-        if (aSpec === 1) {
-            const aFirstM = Array.isArray(a.months) && a.months.length ? Math.min(...a.months) : 99;
-            const bFirstM = Array.isArray(b.months) && b.months.length ? Math.min(...b.months) : 99;
-            if (aFirstM !== bFirstM) return aFirstM - bFirstM;
-        }
-        const dayDiff = (Number(a.dayOfMonth) || 1) - (Number(b.dayOfMonth) || 1);
-        if (dayDiff !== 0) return dayDiff;
-        return compareKorean(a.name, b.name);
-    });
+    // 사용자 -> 구분 -> 분류(대분류·소분류) -> 항목 이름순
+    list.sort(compareAutoTransferItems);
 
     if (list.length === 0) {
         if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-gray-400">해당 조건의 정기 항목이 없습니다.</td></tr>`;
@@ -749,8 +809,12 @@ function renderAtMasterList() {
                 <tr class="hover:bg-orange-50/30 ${isPaused || isEnded ? 'opacity-60' : ''}">
                     <td class="py-2.5 px-3 whitespace-nowrap">${statusBadge}</td>
                     <td class="py-2.5 px-3">
-                        <div class="font-bold text-gray-800">${escHtml(at.name)} ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1 rounded bg-pink-100 text-pink-800">${at.installmentMonths}개월</span>` : ''}</div>
-                        <div class="text-[10px] text-gray-400">${escHtml(at.user)} · ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            ${getOwnerBadgeHtml(at.user)}
+                            <span class="font-bold text-gray-800">${escHtml(at.name)}</span>
+                            ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월</span>` : ''}
+                        </div>
+                        <div class="text-[10px] text-gray-400 mt-0.5">${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
                     </td>
                     <td class="py-2.5 px-3 text-gray-600 whitespace-nowrap">
                         <div>${cycleLabel}</div>
@@ -793,13 +857,14 @@ function renderAtMasterList() {
                     <div class="flex justify-between items-start gap-2">
                         <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
                             ${statusBadge}
+                            ${getOwnerBadgeHtml(at.user)}
                             <span class="font-bold text-sm text-gray-800 truncate">${escHtml(at.name)}</span>
                             ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold whitespace-nowrap">${at.installmentMonths}개월</span>` : ''}
                         </div>
                         <div class="shrink-0">${amtHtml}</div>
                     </div>
                     <div class="text-[11px] text-gray-500 space-y-0.5">
-                        <div>${escHtml(at.user)} · ${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
+                        <div>${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
                         <div><b class="text-gray-700">${cycleLabel}</b> · ${at.startYM || '-'} ~ ${at.endYM || '무기한'}${at.shiftBusinessDay ? ' · 영업일' : ''}</div>
                         <div class="truncate">수단: ${escHtml(methodDisplay)}</div>
                     </div>
