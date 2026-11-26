@@ -1,5 +1,5 @@
 // =========================================================
-// [3. 정기 지출] 전용 모듈 (미반영/반영완료 분리 · PC/모바일 아코디언 · 4단계 정렬)
+// [3. 정기 지출] 전용 모듈 (미반영/반영완료 분리 · PC/모바일 아코디언 · 4단계 정렬 · 할부 바로 변경)
 // =========================================================
 let atYear = todayObj.getFullYear();
 let atMonth = todayObj.getMonth() + 1;
@@ -242,6 +242,7 @@ function renderTab4() {
 function buildAtItemBadgesHtml(at, sched, applied, exp, ym) {
     const isEndingThisMonth = (at.endYM === ym);
     const isSpecific = (at.cycleType === 'specific');
+    const appliedInst = applied ? (Number(applied.installmentMonths) || 1) : 1;
     return [
         isSpecific
             ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">특정월</span>`
@@ -249,9 +250,21 @@ function buildAtItemBadgesHtml(at, sched, applied, exp, ym) {
         sched.shifted ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">영업일 보정</span>` : '',
         (!applied && exp.source === 'prevYear') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">전년 동월 기준</span>` : '',
         (!applied && exp.source === 'blank') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">변동 · 직접 입력</span>` : '',
-        (Number(at.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월 할부</span>` : '',
+        (applied && appliedInst > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${appliedInst}개월 할부</span>` : '',
         isEndingThisMonth ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">이번 달 종료</span>` : ''
     ].filter(Boolean).join(' ');
+}
+
+function buildAtExecInstSelectHtml(at) {
+    const b = getTypeBehavior(at.type);
+    const asset = findAsset(at.method);
+    if (b !== 'expense' || !asset || asset.type !== '신용카드') return '';
+    const curM = Number(at.installmentMonths) || 1;
+    let opts = `<option value="1" ${curM === 1 ? 'selected' : ''}>일시불</option>`;
+    for (let m = 2; m <= 36; m++) {
+        opts += `<option value="${m}" ${curM === m ? 'selected' : ''}>${m}개월</option>`;
+    }
+    return `<select id="atExecInst_${at.id}" title="신용카드 할부 개월 수" class="p-1.5 bg-pink-50/50 border border-pink-200 rounded-xl text-xs font-bold text-pink-900">${opts}</select>`;
 }
 
 function renderAtMonthlyExecutionList(dueItems, ym) {
@@ -282,6 +295,7 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
             const methodText = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
             const badges = buildAtItemBadgesHtml(at, sched, applied, exp, ym);
             const initVal = exp.amount !== null ? formatNumberToInput(exp.amount) : '';
+            const instSelectHtml = buildAtExecInstSelectHtml(at);
 
             return `
                 <div class="bg-white p-3.5 rounded-2xl border border-orange-200 flex flex-wrap justify-between items-center gap-3 text-xs shadow-sm">
@@ -300,6 +314,7 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
                     </div>
                     <div class="flex flex-wrap items-center gap-2 ml-auto">
                         <input type="date" id="atExecDate_${at.id}" value="${sched.date}" class="p-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold">
+                        ${instSelectHtml}
                         <input type="text" inputmode="numeric" id="atExecAmt_${at.id}" onfocus="if(this.value==='0') this.value='';" oninput="formatCommaInput(this)" value="${initVal}" placeholder="금액 입력" class="w-28 p-1.5 bg-white border border-orange-300 rounded-xl text-xs font-bold text-right">
                         <button onclick="applySingleAutoTransfer('${at.id}')" class="px-3.5 py-1.5 btn-orange rounded-xl text-xs shadow-sm whitespace-nowrap">반영</button>
                     </div>
@@ -367,9 +382,15 @@ function toggleSelectAllAt(checked) {
     document.querySelectorAll('.at-bulk-chk').forEach(chk => { chk.checked = checked; });
 }
 
-function pushAutoTransferToTransactions(at, date, amount, ym) {
+function pushAutoTransferToTransactions(at, date, amount, ym, overrideInstMonths) {
     const b = getTypeBehavior(at.type);
     const isTr = (b === 'transfer' || b === 'voucher');
+    const asset = findAsset(at.method);
+    const isCredit = (b === 'expense' && asset && asset.type === '신용카드');
+    const instVal = isCredit
+        ? (Number(overrideInstMonths) || Number(at.installmentMonths) || 1)
+        : 1;
+
     db.transactions.push({
         id: 'TX_AT_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         date,
@@ -381,7 +402,7 @@ function pushAutoTransferToTransactions(at, date, amount, ym) {
         targetAsset: isTr ? resolveToAssetId(at.targetAsset) : '',
         memo: at.name,
         amount,
-        installmentMonths: (b === 'expense' ? (Number(at.installmentMonths) || 1) : 1),
+        installmentMonths: instVal,
         fromAutoTransfer: true,
         autoTransferId: at.id,
         autoTransferYM: ym
@@ -396,10 +417,13 @@ function applySingleAutoTransfer(atId) {
 
     const date = document.getElementById('atExecDate_' + atId)?.value;
     const amount = parseCommaNumber(document.getElementById('atExecAmt_' + atId)?.value);
+    const instEl = document.getElementById('atExecInst_' + atId);
+    const instMonths = instEl ? Number(instEl.value) : (Number(at.installmentMonths) || 1);
+
     if (!date) return alert('반영할 날짜를 확인해 주세요.');
     if (amount <= 0) return alert('금액을 1원 이상 입력해 주세요.');
 
-    pushAutoTransferToTransactions(at, date, amount, ym);
+    pushAutoTransferToTransactions(at, date, amount, ym, instMonths);
     saveDb();
 }
 
@@ -416,11 +440,14 @@ function applySelectedAutoTransfers() {
         if (!at || findAppliedTxForAutoItem(atId, ym)) return;
         const date = document.getElementById('atExecDate_' + atId)?.value;
         const amount = parseCommaNumber(document.getElementById('atExecAmt_' + atId)?.value);
+        const instEl = document.getElementById('atExecInst_' + atId);
+        const instMonths = instEl ? Number(instEl.value) : (Number(at.installmentMonths) || 1);
+
         if (!date || amount <= 0) {
             skippedNames.push(at.name);
             return;
         }
-        pushAutoTransferToTransactions(at, date, amount, ym);
+        pushAutoTransferToTransactions(at, date, amount, ym, instMonths);
         appliedCount++;
     });
 
@@ -483,15 +510,18 @@ function initAtFormMonthButtons() {
 
     const instSel = document.getElementById('atInstallmentMonths');
     if (instSel && instSel.children.length === 0) {
-        const opt1 = document.createElement('option');
-        opt1.value = 1; opt1.textContent = '일시불';
-        instSel.appendChild(opt1);
         for (let m = 2; m <= 36; m++) {
             const opt = document.createElement('option');
-            opt.value = m; opt.textContent = `${m}개월 할부`;
+            opt.value = m; opt.textContent = `${m}개월`;
+            if (m === 3) opt.selected = true;
             instSel.appendChild(opt);
         }
     }
+}
+
+function toggleAtInstallmentMonths(checked) {
+    const box = document.getElementById('atInstallmentMonthsBox');
+    if (box) box.classList.toggle('hidden', !checked);
 }
 
 function toggleAtSpecificMonth(m) {
@@ -593,7 +623,12 @@ function onAtTypeChange(keepSelection = false) {
         toSel.innerHTML = toList.map(a => `<option value="${escHtml(a.id)}">${escHtml(getAssetOptionText(a))}</option>`).join('') || '<option value="">자산 없음</option>';
         if (keepSelection && fromList.some(a => a.id === prevFrom)) fromSel.value = prevFrom;
         if (keepSelection && toList.some(a => a.id === prevTo)) toSel.value = prevTo;
-        document.getElementById('atInstallmentWrap').classList.add('hidden');
+
+        const instWrap = document.getElementById('atInstallmentWrap');
+        const instChk = document.getElementById('atIsInstallment');
+        if (instWrap) instWrap.classList.add('hidden');
+        if (instChk) instChk.checked = false;
+        toggleAtInstallmentMonths(false);
     } else {
         const mSel = document.getElementById('atMethod');
         const prevM = mSel.value;
@@ -618,8 +653,13 @@ function onAtMethodChange() {
     const isExp = getTypeBehavior(document.getElementById('atType').value) === 'expense';
     const asset = findAsset(document.getElementById('atMethod').value);
     const isCredit = isExp && asset && asset.type === '신용카드';
-    document.getElementById('atInstallmentWrap').classList.toggle('hidden', !isCredit);
-    if (!isCredit) document.getElementById('atInstallmentMonths').value = '1';
+    const wrap = document.getElementById('atInstallmentWrap');
+    const chk = document.getElementById('atIsInstallment');
+    if (wrap) wrap.classList.toggle('hidden', !isCredit);
+    if (!isCredit) {
+        if (chk) chk.checked = false;
+        toggleAtInstallmentMonths(false);
+    }
 }
 
 function handleAtSubmit(e) {
@@ -654,8 +694,9 @@ function handleAtSubmit(e) {
         method = document.getElementById('atMethod').value;
         if (!method) return alert('결제수단 또는 계좌를 선택해 주세요.');
         const asset = findAsset(method);
-        if (behavior === 'expense' && asset && asset.type === '신용카드') {
-            installmentMonths = Number(document.getElementById('atInstallmentMonths').value) || 1;
+        const isInstChecked = !!document.getElementById('atIsInstallment')?.checked;
+        if (behavior === 'expense' && asset && asset.type === '신용카드' && isInstChecked) {
+            installmentMonths = Number(document.getElementById('atInstallmentMonths').value) || 2;
         }
     }
 
@@ -707,7 +748,12 @@ function startEditAt(id) {
     } else {
         document.getElementById('atMethod').value = resolveToAssetId(at.method);
         onAtMethodChange();
-        document.getElementById('atInstallmentMonths').value = at.installmentMonths || 1;
+        const months = Number(at.installmentMonths) || 1;
+        const isInst = months > 1;
+        const instChk = document.getElementById('atIsInstallment');
+        if (instChk) instChk.checked = isInst;
+        toggleAtInstallmentMonths(isInst);
+        if (isInst) document.getElementById('atInstallmentMonths').value = months;
     }
 
     document.getElementById('atCycleType').value = at.cycleType || 'monthly';
@@ -741,7 +787,12 @@ function resetAtForm() {
     document.getElementById('atAmount').value = '';
     document.getElementById('atStartYM').value = formatYM(atYear, atMonth);
     document.getElementById('atEndYM').value = '';
-    document.getElementById('atInstallmentMonths').value = '1';
+
+    const instChk = document.getElementById('atIsInstallment');
+    if (instChk) instChk.checked = false;
+    toggleAtInstallmentMonths(false);
+    const instSel = document.getElementById('atInstallmentMonths');
+    if (instSel) instSel.value = '3';
     syncAtFormOptions();
 }
 

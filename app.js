@@ -2040,6 +2040,17 @@ function toggleCardPerfFields() {
     if (basisEl) basisEl.disabled = !enabled;
 }
 
+function toggleDebtSignField() {
+    const typeEl = document.getElementById('debtType');
+    const isMinus = typeEl && typeEl.value === '마이너스통장';
+    const signEl = document.getElementById('debtBalanceSign');
+    const labelEl = document.getElementById('debtInitBalanceLabel');
+    const hintEl = document.getElementById('debtMinusHint');
+    if (signEl) signEl.classList.toggle('hidden', !isMinus);
+    if (labelEl) labelEl.textContent = isMinus ? '초기 잔액 (원)' : '남은 원금 (원)';
+    if (hintEl) hintEl.classList.toggle('hidden', !isMinus);
+}
+
 function toggleSettingsAssetGroup(groupKey) {
     settingsAssetExpanded[groupKey] = !settingsAssetExpanded[groupKey];
     renderAssets();
@@ -2070,10 +2081,27 @@ function renderAssets() {
     const banks = sortAssetsByOwnerTypeName(db.assets.filter(a => a.group === 'bank'));
     const cards = sortAssetsByOwnerTypeName(db.assets.filter(a => a.group === 'card'));
     const debts = sortAssetsByOwnerTypeName(db.assets.filter(a => a.group === 'debt'));
-    const bankOpts = banks.filter(b => b.type !== '선불·상품권' && b.type !== '실물자산' && b.type !== '투자').map(b => `<option value="${escHtml(b.id)}">${escHtml(getAssetOptionText(b))}</option>`).join('') || '<option value="">통장 등록 필요</option>';
-    document.getElementById('cardLinkedAccount').innerHTML = bankOpts;
-    document.getElementById('debtLinkedAccount').innerHTML = bankOpts;
+
+    const checkingBanks = banks.filter(b => b.type !== '선불·상품권' && b.type !== '실물자산' && b.type !== '투자');
+    const minusAccounts = debts.filter(d => d.type === '마이너스통장');
+
+    // 신용·체크카드 출금 계좌에는 일반 통장과 마이너스통장 모두 연결 가능
+    const cardLinkedList = sortAssetsByOwnerTypeName([...checkingBanks, ...minusAccounts]);
+    const cardLinkedOpts = cardLinkedList.map(b => `<option value="${escHtml(b.id)}">${escHtml(getAssetOptionText(b))}</option>`).join('') || '<option value="">통장 등록 필요</option>';
+    const debtLinkedOpts = cardLinkedList.map(b => `<option value="${escHtml(b.id)}">${escHtml(getAssetOptionText(b))}</option>`).join('') || '<option value="">통장 등록 필요</option>';
+
+    const cardAccSel = document.getElementById('cardLinkedAccount');
+    const prevCardAcc = cardAccSel.value;
+    cardAccSel.innerHTML = cardLinkedOpts;
+    if (prevCardAcc && cardLinkedList.some(b => b.id === prevCardAcc)) cardAccSel.value = prevCardAcc;
+
+    const debtAccSel = document.getElementById('debtLinkedAccount');
+    const prevDebtAcc = debtAccSel.value;
+    debtAccSel.innerHTML = debtLinkedOpts;
+    if (prevDebtAcc && cardLinkedList.some(b => b.id === prevDebtAcc)) debtAccSel.value = prevDebtAcc;
+
     toggleCardPerfFields();
+    toggleDebtSignField();
 
     // 1. 통장·투자·실물 (사용자별 묶음 아코디언 -> 내부 종류별·자산명순)
     const bankWrap = document.getElementById('bankGroupedList');
@@ -2255,11 +2283,24 @@ function renderAssets() {
         if (groups.length === 0) {
             debtWrap.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-blue-200 text-center text-xs text-gray-400">등록된 부채가 없습니다.</div>`;
         } else {
+            const formatDebtInitHtml = (d) => {
+                const raw = Number(d.initBalance) || 0;
+                if (d.type === '마이너스통장' && raw < 0) {
+                    return `<span class="text-blue-600">+${Math.abs(raw).toLocaleString()}원 (예치)</span>`;
+                }
+                if (raw > 0) return `<span class="text-red-600">${raw.toLocaleString()}원</span>`;
+                return `<span class="text-gray-500">0원</span>`;
+            };
+
             debtWrap.innerHTML = groups.map(g => {
                 const gKey = 'debt_' + g.owner;
                 const escKey = gKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const isOpen = !!settingsAssetExpanded[gKey];
-                const sumDebt = g.items.reduce((s, d) => s + (Number(d.initBalance) || 0), 0);
+                const sumDebt = g.items.reduce((s, d) => s + Math.max(0, Number(d.initBalance) || 0), 0);
+                const sumSurplus = g.items.reduce((s, d) => s + (d.type === '마이너스통장' && Number(d.initBalance) < 0 ? Math.abs(Number(d.initBalance)) : 0), 0);
+                const headerSumHtml = sumSurplus > 0
+                    ? `<span class="text-xs font-bold text-red-600 whitespace-nowrap">${sumDebt.toLocaleString()}원</span> <span class="text-[11px] font-bold text-blue-600 whitespace-nowrap">(예치 +${sumSurplus.toLocaleString()}원)</span>`
+                    : `<span class="text-xs font-bold text-red-600 whitespace-nowrap">${sumDebt.toLocaleString()}원</span>`;
 
                 const bodyHtml = isOpen ? `
                     <div class="hidden md:block border-t border-blue-100 overflow-x-auto">
@@ -2269,7 +2310,7 @@ function renderAssets() {
                                     <th class="py-2.5 px-4">종류</th>
                                     <th class="py-2.5 px-4">부채명</th>
                                     <th class="py-2.5 px-4">연결계좌</th>
-                                    <th class="py-2.5 px-4 text-right">설정된 원금 / 잔액</th>
+                                    <th class="py-2.5 px-4 text-right">설정된 초기 원금 / 잔액</th>
                                     <th class="py-2.5 px-4 text-right">관리</th>
                                 </tr>
                             </thead>
@@ -2279,7 +2320,7 @@ function renderAssets() {
                                         <td class="py-2.5 px-4 whitespace-nowrap"><span class="px-2 py-0.5 bg-orange-50 text-orange-800 rounded font-bold">${escHtml(d.type)}</span></td>
                                         <td class="py-2.5 px-4 font-bold text-gray-800 whitespace-nowrap">${escHtml(d.name)}</td>
                                         <td class="py-2.5 px-4 text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(d.linkedAccount))}</td>
-                                        <td class="py-2.5 px-4 text-right font-bold text-red-600 whitespace-nowrap">${Number(d.initBalance).toLocaleString()}원</td>
+                                        <td class="py-2.5 px-4 text-right font-bold whitespace-nowrap">${formatDebtInitHtml(d)}</td>
                                         <td class="py-2.5 px-4 text-right space-x-1 whitespace-nowrap">
                                             <button onclick="startEditDebt('${d.id}')" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded font-bold">수정</button>
                                             <button onclick="deleteAsset('${d.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded font-bold">삭제</button>
@@ -2296,7 +2337,7 @@ function renderAssets() {
                                         <span class="px-1.5 py-0.5 bg-orange-50 text-orange-800 rounded font-bold text-[10px] shrink-0 whitespace-nowrap">${escHtml(d.type)}</span>
                                         <span class="font-bold text-sm text-gray-800 truncate">${escHtml(d.name)}</span>
                                     </div>
-                                    <span class="font-bold text-sm text-red-600 shrink-0 whitespace-nowrap">${Number(d.initBalance).toLocaleString()}원</span>
+                                    <span class="font-bold text-sm shrink-0 whitespace-nowrap">${formatDebtInitHtml(d)}</span>
                                 </div>
                                 <div class="flex justify-between items-center pt-1 border-t border-gray-100 gap-2">
                                     <span class="text-[11px] text-gray-500 truncate">연결: <b class="text-gray-700">${escHtml(getAssetLabel(d.linkedAccount))}</b></span>
@@ -2317,7 +2358,7 @@ function renderAssets() {
                                 <span class="text-[11px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 font-bold shrink-0">${g.items.length}건</span>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
-                                <span class="text-xs font-bold text-red-600 whitespace-nowrap">${sumDebt.toLocaleString()}원</span>
+                                ${headerSumHtml}
                                 <span class="text-[11px] text-blue-500 font-bold">${isOpen ? '▲' : '▼'}</span>
                             </div>
                         </div>
@@ -2405,7 +2446,11 @@ function resetCardForm() {
 function saveDebtAsset() {
     const editId = document.getElementById('editDebtId').value, type = document.getElementById('debtType').value;
     const owner = document.getElementById('debtOwner')?.value || db.users[0];
-    const name = document.getElementById('debtName').value.trim(), initBalance = parseCommaNumber(document.getElementById('debtInitBalance').value);
+    const name = document.getElementById('debtName').value.trim();
+    const absBal = parseCommaNumber(document.getElementById('debtInitBalance').value);
+    const sign = document.getElementById('debtBalanceSign')?.value || 'minus';
+    // 마이너스통장에서 '+ 예치'를 선택하면 내부적으로 음수(부채가 아닌 예치금)로 저장
+    const initBalance = (type === '마이너스통장' && sign === 'plus' && absBal > 0) ? -absBal : absBal;
     const linkedAccount = document.getElementById('debtLinkedAccount').value;
     if (!name) return alert('부채 이름을 입력해 주세요.');
     if (editId) {
@@ -2420,13 +2465,21 @@ function startEditDebt(id) {
     document.getElementById('editDebtId').value = d.id;
     if (document.getElementById('debtOwner')) document.getElementById('debtOwner').value = d.owner || db.users[0];
     document.getElementById('debtType').value = d.type;
-    document.getElementById('debtName').value = d.name; document.getElementById('debtInitBalance').value = formatNumberToInput(d.initBalance, true);
+    toggleDebtSignField();
+    const rawBal = Number(d.initBalance) || 0;
+    const signEl = document.getElementById('debtBalanceSign');
+    if (signEl) signEl.value = (d.type === '마이너스통장' && rawBal < 0) ? 'plus' : 'minus';
+    document.getElementById('debtName').value = d.name;
+    document.getElementById('debtInitBalance').value = formatNumberToInput(Math.abs(rawBal), true);
     document.getElementById('debtLinkedAccount').value = resolveToAssetId(d.linkedAccount);
     document.getElementById('debtFormTitle').textContent = `[${d.owner || ''}] ${d.name} 수정 중`; document.getElementById('debtSubmitBtn').textContent = '수정 저장'; document.getElementById('debtCancelBtn').classList.remove('hidden');
     openCollapsibleSection('debtFormBody', 'debtFormToggleBtn', '접기 ▲', 'debtFormCard');
 }
 function resetDebtForm() {
     ['editDebtId', 'debtName', 'debtInitBalance'].forEach(id => document.getElementById(id).value = '');
+    const signEl = document.getElementById('debtBalanceSign');
+    if (signEl) signEl.value = 'minus';
+    toggleDebtSignField();
     document.getElementById('debtFormTitle').textContent = '대출 · 마이너스통장 신규 등록'; document.getElementById('debtSubmitBtn').textContent = '부채 저장하기'; document.getElementById('debtCancelBtn').classList.add('hidden');
 }
 function deleteAsset(id) {

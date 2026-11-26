@@ -1,12 +1,12 @@
 // =========================================================
-// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 멀티 사용자 · 빈 달 제외 추이)
+// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 마이너스통장 자산/부채 자동 전환)
 // =========================================================
 let asset5TrendMode = '6m'; // '6m' | 'year'
 let asset5ExpandedBank = {}; // key: 'cash' | 'voucher' | 'saving' | 'invest' | 'real'
 let asset5ExpandedDebt = {}; // key: 'loan' | 'card'
 
 const ASSET_GROUP_META = {
-    cash:    { label: '입출금·현금', short: '입출금·현금', color: '#74C0FC', types: ['입출금통장', '현금'] },
+    cash:    { label: '입출금·현금', short: '입출금·현금', color: '#74C0FC', types: ['입출금통장', '현금', '마이너스통장'] },
     voucher: { label: '선불·상품권', short: '선불·상품권', color: '#FFA94D', types: ['선불·상품권'] },
     saving:  { label: '예·적금', short: '예·적금', color: '#63E6BE', types: ['예·적금'] },
     invest:  { label: '투자 (주식·펀드·연금)', short: '투자', color: '#B197FC', types: ['투자'] },
@@ -47,6 +47,7 @@ function computeAssetSnapshotAsOf(asOfDate) {
         if (a.group === 'bank') {
             bankCostMap[a.id] = Number(a.initBalance) || 0;
         } else if (a.group === 'debt') {
+            // 마이너스통장: initBalance > 0 이면 부채(-잔고), < 0 이면 예치금(+잔고)
             debtBalMap[a.id] = Number(a.initBalance) || 0;
         } else if (a.group === 'card' && a.type === '신용카드') {
             cardUnpaidMap[a.id] = Number(a.revolving) || 0;
@@ -65,7 +66,12 @@ function computeAssetSnapshotAsOf(asOfDate) {
         if (a.group === 'bank') {
             bankCostMap[a.id] = (bankCostMap[a.id] || 0) + delta;
         } else if (a.group === 'debt') {
-            debtBalMap[a.id] = Math.max(0, (debtBalMap[a.id] || 0) - delta);
+            if (a.type === '마이너스통장') {
+                // 마이너스통장은 0원을 넘어 플러스(+) 예치금 영역까지 그대로 반영
+                debtBalMap[a.id] = (debtBalMap[a.id] || 0) - delta;
+            } else {
+                debtBalMap[a.id] = Math.max(0, (debtBalMap[a.id] || 0) - delta);
+            }
         }
     };
 
@@ -146,11 +152,27 @@ function computeAssetSnapshotAsOf(asOfDate) {
             else if (a.type === '실물자산') gKey = 'real';
             groupTotals[gKey] += Math.max(0, currentVal);
 
-            bankItems.push({ asset: a, groupKey: gKey, costBasis, valOffset, currentVal });
+            bankItems.push({ asset: a, groupKey: gKey, costBasis, valOffset, currentVal, isMinusSurplus: false });
         } else if (a.group === 'debt') {
             const bal = debtBalMap[a.id] || 0;
-            totalDebts += bal;
-            debtItems.push({ asset: a, balance: bal });
+            if (a.type === '마이너스통장' && bal < 0) {
+                // 마이너스통장 잔액이 플러스(+) 상태 -> 보유 자산(입출금·현금)으로 자동 분류
+                const surplusVal = -bal;
+                totalAssets += surplusVal;
+                groupTotals.cash += surplusVal;
+                bankItems.push({
+                    asset: a,
+                    groupKey: 'cash',
+                    costBasis: surplusVal,
+                    valOffset: 0,
+                    currentVal: surplusVal,
+                    isMinusSurplus: true
+                });
+            } else {
+                const debtVal = Math.max(0, bal);
+                totalDebts += debtVal;
+                debtItems.push({ asset: a, balance: debtVal });
+            }
         } else if (a.group === 'card' && a.type === '신용카드') {
             const unpaid = Math.max(0, cardUnpaidMap[a.id] || 0);
             totalDebts += unpaid;
@@ -270,7 +292,7 @@ function renderAsset5BankList(bankItems) {
         const subTotal = list.reduce((s, x) => s + x.currentVal, 0);
         const isOpen = !!asset5ExpandedBank[gKey];
 
-        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-blue-100 space-y-2">${list.map(({ asset, costBasis, valOffset, currentVal }) => {
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-blue-100 space-y-2">${list.map(({ asset, costBasis, valOffset, currentVal, isMinusSurplus }) => {
             const isValuable = (asset.type === '투자' || asset.type === '실물자산');
             let profitHtml = '';
             if (asset.type === '투자' && valOffset !== 0) {
@@ -281,6 +303,10 @@ function renderAsset5BankList(bankItems) {
                 profitHtml = `<div class="text-[11px] text-gray-400">취득가 ${costBasis.toLocaleString()}원 · 변동 ${valOffset > 0 ? '+' : ''}${valOffset.toLocaleString()}원</div>`;
             }
 
+            const typeBadge = isMinusSurplus
+                ? `<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">마이너스통장 (예치)</span>`
+                : `<span class="px-1.5 py-0.5 rounded bg-white text-blue-700 border border-blue-100 font-bold text-[10px]">${escHtml(asset.type)}</span>`;
+
             const actionBtn = isValuable
                 ? `<button onclick="event.stopPropagation(); openValuationModal('${asset.id}', ${costBasis}, ${currentVal})" class="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-[11px] font-bold whitespace-nowrap">평가액 갱신</button>`
                 : `<button onclick="event.stopPropagation(); openBalanceAdjustModal('${asset.id}', ${currentVal})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>`;
@@ -290,7 +316,7 @@ function renderAsset5BankList(bankItems) {
                     <div class="space-y-0.5 min-w-[140px]">
                         <div class="flex items-center gap-1.5 flex-wrap">
                             ${getOwnerBadgeHtml(asset.owner)}
-                            <span class="px-1.5 py-0.5 rounded bg-white text-blue-700 border border-blue-100 font-bold text-[10px]">${escHtml(asset.type)}</span>
+                            ${typeBadge}
                             <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
                         </div>
                         ${profitHtml}
@@ -346,7 +372,9 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
     let html = '';
     if (debtItems.length > 0) {
         const isOpen = !!asset5ExpandedDebt.loan;
-        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${debtItems.map(({ asset, balance }) => `
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${debtItems.map(({ asset, balance }) => {
+            const adjustArg = (asset.type === '마이너스통장') ? -balance : balance;
+            return `
             <div class="bg-pink-50/30 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
                 <div class="flex items-center gap-1.5 flex-wrap">
                     ${getOwnerBadgeHtml(asset.owner)}
@@ -354,10 +382,11 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
                     <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
                 </div>
                 <div class="flex items-center gap-2 ml-auto">
-                    <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${balance.toLocaleString()}원</span>
-                    <button onclick="event.stopPropagation(); openBalanceAdjustModal('${asset.id}', ${balance})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>
+                    <span class="font-bold text-sm whitespace-nowrap ${balance > 0 ? 'text-rose-600' : 'text-gray-400'}">${balance.toLocaleString()}원</span>
+                    <button onclick="event.stopPropagation(); openBalanceAdjustModal('${asset.id}', ${adjustArg})" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-[11px] font-bold whitespace-nowrap">잔액 보정</button>
                 </div>
-            </div>`).join('')}</div>` : '';
+            </div>`;
+        }).join('')}</div>` : '';
 
         html += `
             <div class="bg-white p-3.5 rounded-2xl border border-pink-100 shadow-sm">
@@ -539,6 +568,51 @@ function renderAsset5TrendChart() {
 function openBalanceAdjustModal(assetId, currentVal) {
     const a = findAsset(assetId);
     if (!a) return;
+
+    // 마이너스통장 전용 (+ 예치 / - 부채 자동 전환 보정 모달)
+    if (a.group === 'debt' && a.type === '마이너스통장') {
+        const absVal = Math.abs(currentVal);
+        const isNeg = currentVal < 0;
+        const curText = currentVal > 0
+            ? `<span class="font-bold text-sm text-blue-600">+${currentVal.toLocaleString()}원 (예치 · 자산)</span>`
+            : (currentVal < 0
+                ? `<span class="font-bold text-sm text-rose-600">-${absVal.toLocaleString()}원 (마이너스 · 부채)</span>`
+                : `<span class="font-bold text-sm text-gray-800">0원</span>`);
+
+        openCustomModal(`
+            <h3 class="title-font text-lg text-blue-900">${escHtml(getAssetLabel(a.id))} 잔액 보정</h3>
+            <p class="text-xs text-gray-500">플러스(+) 잔액은 보유 자산으로, 마이너스(-) 사용액은 부채로 자동 반영됩니다.</p>
+            <div class="bg-blue-50/50 p-3 rounded-xl text-xs flex justify-between items-center">
+                <span class="text-gray-600">현재 계산된 잔액</span>
+                ${curText}
+            </div>
+            <div class="space-y-2.5 text-xs">
+                <label class="block font-bold text-gray-600">실제 통장 잔액 상태</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-blue-200 bg-blue-50/40 cursor-pointer font-bold text-blue-800">
+                        <input type="radio" name="modalMinusSign" value="plus" ${!isNeg ? 'checked' : ''} class="accent-blue-500">
+                        <span>+ 플러스 (예치)</span>
+                    </label>
+                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-rose-200 bg-rose-50/40 cursor-pointer font-bold text-rose-700">
+                        <input type="radio" name="modalMinusSign" value="minus" ${isNeg ? 'checked' : ''} class="accent-rose-500">
+                        <span>- 마이너스 (부채)</span>
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-bold text-gray-600 mb-1">실제 확인된 금액 (원)</label>
+                    <div class="relative">
+                        <input type="text" inputmode="numeric" id="modalAdjustBalanceVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(absVal, true)}" placeholder="금액 입력" class="w-full p-2.5 pr-8 border border-blue-300 rounded-xl text-sm font-bold text-right">
+                        <button type="button" onclick="clearNumericInput('modalAdjustBalanceVal')" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeCustomModal()" class="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs">취소</button>
+                <button onclick="saveMinusBalanceAdjust('${a.id}', ${currentVal})" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">잔액 맞추기</button>
+            </div>`);
+        return;
+    }
+
     openCustomModal(`
         <h3 class="title-font text-lg text-blue-900">${escHtml(getAssetLabel(a.id))} 잔액 보정</h3>
         <p class="text-xs text-gray-500">실제 은행 앱 잔액과 차이가 날 때 지출·수입 통계에 영향을 주지 않고 현재 잔액을 바로 맞춥니다.</p>
@@ -548,12 +622,29 @@ function openBalanceAdjustModal(assetId, currentVal) {
         </div>
         <div class="space-y-2 text-xs">
             <label class="block font-bold text-gray-600">실제 확인된 현재 잔액 (원)</label>
-            <input type="text" inputmode="numeric" id="modalAdjustBalanceVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(currentVal, true)}" class="w-full p-2.5 border border-blue-300 rounded-xl text-sm font-bold text-right">
+            <div class="relative">
+                <input type="text" inputmode="numeric" id="modalAdjustBalanceVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(currentVal, true)}" placeholder="금액 입력" class="w-full p-2.5 pr-8 border border-blue-300 rounded-xl text-sm font-bold text-right">
+                <button type="button" onclick="clearNumericInput('modalAdjustBalanceVal')" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+            </div>
         </div>
         <div class="flex justify-end gap-2 pt-2">
             <button onclick="closeCustomModal()" class="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs">취소</button>
             <button onclick="saveBalanceAdjust('${a.id}', ${currentVal})" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">잔액 맞추기</button>
         </div>`);
+}
+
+function saveMinusBalanceAdjust(assetId, currentSignedCash) {
+    const a = findAsset(assetId);
+    if (!a) return;
+    const sign = document.querySelector('input[name="modalMinusSign"]:checked')?.value || 'minus';
+    const absAmt = parseCommaNumber(document.getElementById('modalAdjustBalanceVal').value);
+    const targetSignedCash = (sign === 'minus') ? -absAmt : absAmt;
+    const targetDebtBal = -targetSignedCash;
+    const currentDebtBal = -currentSignedCash;
+    const diffDebt = targetDebtBal - currentDebtBal;
+    a.initBalance = (Number(a.initBalance) || 0) + diffDebt;
+    closeCustomModal();
+    saveDb();
 }
 
 function saveBalanceAdjust(assetId, currentVal) {
@@ -578,7 +669,10 @@ function openValuationModal(assetId, costBasis, currentVal) {
         </div>
         <div class="space-y-2 text-xs">
             <label class="block font-bold text-gray-600">현재 평가금액 (원)</label>
-            <input type="text" inputmode="numeric" id="modalValuationVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(currentVal, true)}" class="w-full p-2.5 border border-purple-300 rounded-xl text-sm font-bold text-right">
+            <div class="relative">
+                <input type="text" inputmode="numeric" id="modalValuationVal" oninput="formatCommaInput(this)" value="${formatNumberToInput(currentVal, true)}" placeholder="금액 입력" class="w-full p-2.5 pr-8 border border-purple-300 rounded-xl text-sm font-bold text-right">
+                <button type="button" onclick="clearNumericInput('modalValuationVal')" title="금액 지우기" class="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold">×</button>
+            </div>
         </div>
         <div class="flex justify-between items-center pt-2">
             <button onclick="resetValuationOffset('${a.id}')" class="text-xs text-gray-500 underline font-bold">원금 기준으로 초기화</button>

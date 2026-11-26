@@ -407,7 +407,7 @@
         <div class="flex flex-wrap justify-between items-center gap-2 border-b border-orange-200 pb-3">
           <div>
             <h3 class="title-font text-lg text-orange-900">이번 달 정기 지출·이체 반영</h3>
-            <p class="text-xs text-gray-500">날짜와 금액을 확인·수정한 뒤 <b>[반영]</b>을 누르면 가계부에 즉시 기록됩니다.</p>
+            <p class="text-xs text-gray-500">날짜와 금액(신용카드는 할부 포함)을 확인·수정한 뒤 <b>[반영]</b>을 누르면 가계부에 즉시 기록됩니다.</p>
           </div>
           <div id="atSelectAllWrap" class="hidden flex items-center gap-3">
             <label class="flex items-center space-x-1.5 text-xs font-bold text-gray-700 cursor-pointer">
@@ -459,7 +459,7 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label class="block font-bold text-gray-600 mb-1">대분류</label>
                   <select id="atCatMain" onchange="updateAtSubCategories()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
@@ -472,10 +472,21 @@
                   <label id="atMethodLabel" class="block font-bold text-gray-600 mb-1">결제수단</label>
                   <select id="atMethod" onchange="onAtMethodChange()" class="w-full p-2 bg-white border border-gray-300 rounded-xl"></select>
                 </div>
-                <div id="atInstallmentWrap" class="hidden">
-                  <label class="block font-bold text-pink-700 mb-1">신용카드 결제 방식</label>
-                  <select id="atInstallmentMonths" class="w-full p-2 bg-pink-50/40 border border-pink-200 rounded-xl font-bold text-pink-900"></select>
+              </div>
+
+              <!-- 신용카드 할부 적용 체크박스 (가계부 입력창과 통일) -->
+              <div id="atInstallmentWrap" class="hidden bg-white p-3 rounded-xl border border-pink-200 space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <label class="flex items-center space-x-1.5 text-xs cursor-pointer">
+                    <input type="checkbox" id="atIsInstallment" onchange="toggleAtInstallmentMonths(this.checked)" class="rounded accent-pink-500">
+                    <span class="font-bold text-pink-700">할부 적용 (신용카드 기본값)</span>
+                  </label>
+                  <div id="atInstallmentMonthsBox" class="hidden flex items-center gap-2">
+                    <label class="text-xs font-bold text-gray-600 whitespace-nowrap">기본 할부 개월</label>
+                    <select id="atInstallmentMonths" class="p-1.5 bg-pink-50/40 border border-pink-200 rounded-xl text-xs font-bold text-pink-900"></select>
+                  </div>
                 </div>
+                <p class="text-[11px] text-gray-400">위 [이번 달 정기 지출·이체 반영] 목록에서도 반영 직전에 할부 개월 수를 바로 바꿀 수 있습니다.</p>
               </div>
 
               <div id="atMethodTransferWrap" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-purple-50/60 p-3 rounded-xl border border-purple-200">
@@ -1133,7 +1144,7 @@
           <div id="cardGroupedList" class="space-y-2.5"></div>
         </div>
 
-        <!-- (3) 대출 · 마이너스통장 -->
+        <!-- (3) 대출 · 마이너스통장 (마이너스통장 +/- 초기잔액 선택 지원) -->
         <div id="assetSection-debt" class="hidden space-y-4">
           <div id="debtFormCard" class="bg-white p-4 rounded-2xl border border-blue-200">
             <div class="flex justify-between items-center gap-2">
@@ -1145,31 +1156,40 @@
             </div>
             <div id="debtFormBody" class="hidden md:block mt-3 pt-3 border-t border-gray-100">
               <input type="hidden" id="editDebtId">
-              <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                 <div>
                   <label class="block text-xs font-bold text-gray-600 mb-1">소유자</label>
                   <select id="debtOwner" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold"></select>
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-gray-600 mb-1">부채 종류</label>
-                  <select id="debtType" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white">
+                  <select id="debtType" onchange="toggleDebtSignField()" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white font-bold">
                     <option value="일반대출">일반대출 (주담대/신용 등)</option>
                     <option value="마이너스통장">마이너스통장</option>
                   </select>
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-gray-600 mb-1">부채 이름</label>
-                  <input type="text" id="debtName" placeholder="예: 주택담보대출" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
+                  <input type="text" id="debtName" placeholder="예: 주택담보대출, 비상금마통" class="w-full p-2 border border-gray-300 rounded-xl text-xs">
                 </div>
                 <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-1">남은 원금/마통잔액 (원)</label>
-                  <input type="text" inputmode="numeric" id="debtInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
+                  <label id="debtInitBalanceLabel" class="block text-xs font-bold text-gray-600 mb-1">남은 원금 (원)</label>
+                  <div class="flex items-center gap-1.5">
+                    <select id="debtBalanceSign" class="hidden shrink-0 p-2 border border-blue-200 rounded-xl text-xs bg-blue-50/60 font-bold text-gray-800">
+                      <option value="minus">- 부채</option>
+                      <option value="plus">+ 예치</option>
+                    </select>
+                    <input type="text" inputmode="numeric" id="debtInitBalance" oninput="formatCommaInput(this)" placeholder="0" class="flex-1 min-w-0 w-full p-2 border border-gray-300 rounded-xl text-xs font-bold text-right">
+                  </div>
                 </div>
                 <div>
                   <label class="block text-xs font-bold text-gray-600 mb-1">연결 상환 계좌</label>
                   <select id="debtLinkedAccount" class="w-full p-2 border border-gray-300 rounded-xl text-xs bg-white"></select>
                 </div>
                 <button onclick="saveDebtAsset()" id="debtSubmitBtn" class="py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">부채 저장하기</button>
+              </div>
+              <div id="debtMinusHint" class="hidden text-[11px] text-blue-700 bg-blue-50/60 border border-blue-100 rounded-xl px-3 py-2 mt-3">
+                마이너스통장은 한 계좌만 등록해도 잔액이 <b>플러스(+)일 땐 보유 자산(입출금·현금)</b>, <b>마이너스(-)일 땐 부채</b>로 자동 전환됩니다.
               </div>
             </div>
           </div>
