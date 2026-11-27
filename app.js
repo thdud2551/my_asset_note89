@@ -2490,12 +2490,16 @@ function deleteAsset(id) {
 function renderAnniversaries() {
     const tbody = document.getElementById('annivListBody');
     const cardEl = document.getElementById('annivCardList');
-    if (!db.anniversaries || db.anniversaries.length === 0) {
+    const badgeEl = document.getElementById('annivTotalBadge');
+    const list = db.anniversaries || [];
+    if (badgeEl) badgeEl.textContent = `${list.length}건`;
+
+    if (list.length === 0) {
         if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-gray-400">등록된 기념일이 없습니다.</td></tr>`;
         if (cardEl) cardEl.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-pink-200 text-center text-xs text-gray-400">등록된 기념일이 없습니다.</div>`;
         return;
     }
-    const sorted = [...db.anniversaries].sort((a, b) =>
+    const sorted = [...list].sort((a, b) =>
         (Number(a.month) - Number(b.month)) || (Number(a.day) - Number(b.day)) || compareKorean(a.name, b.name)
     );
     if (tbody) {
@@ -2531,6 +2535,7 @@ function saveAnniversary() {
     if (calType === 'lunar' && day === 31) return alert('음력은 최대 30일까지 선택할 수 있습니다.');
     if (editId) { const item = db.anniversaries.find(a => a.id === editId); if (item) Object.assign(item, { name, calType, month, day }); }
     else db.anniversaries.push({ id: 'AN_' + Date.now(), name, calType, month, day });
+    openCollapsibleSection('annivListSectionBody', 'annivListToggleBtn', '접기 ▲');
     resetAnnivForm(); saveDb();
 }
 function startEditAnniv(id) {

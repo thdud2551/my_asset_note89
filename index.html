@@ -1193,7 +1193,7 @@
         </div>
       </div>
 
-      <!-- [하위 5] 기념일 관리 -->
+      <!-- [하위 5] 기념일 관리 (등록 목록 기본 접힘 아코디언 적용) -->
       <div id="sub6" class="sub-tab-content hidden box-slowpoke p-4 sm:p-6 rounded-3xl shadow-sm space-y-5">
         <div class="border-b border-pink-200 pb-3">
           <h2 class="title-font text-lg sm:text-xl text-pink-900">기념일 관리 (양력 · 음력 자동 변환)</h2>
@@ -1235,27 +1235,40 @@
             </div>
           </div>
         </div>
-        <div class="hidden md:block bg-white rounded-2xl border border-pink-200 overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-pink-50 text-pink-900 border-b border-pink-100">
-              <tr>
-                <th class="py-3 px-4">구분</th>
-                <th class="py-3 px-4">기념일 이름</th>
-                <th class="py-3 px-4">등록 날짜</th>
-                <th class="py-3 px-4 text-right">관리</th>
-              </tr>
-            </thead>
-            <tbody id="annivListBody" class="divide-y divide-gray-100"></tbody>
-          </table>
+
+        <!-- 등록된 기념일 목록 (평상시 기본 접힘) -->
+        <div class="bg-white p-4 rounded-2xl border border-pink-200">
+          <div onclick="toggleCollapsibleSection('annivListSectionBody', 'annivListToggleBtn', '목록 펼치기 ▼', '접기 ▲')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+            <div class="flex items-center gap-2 min-w-0">
+              <h3 class="font-bold text-sm text-pink-900 truncate">등록된 기념일 목록</h3>
+              <span id="annivTotalBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-pink-50 text-pink-800 font-bold whitespace-nowrap shrink-0">0건</span>
+            </div>
+            <button type="button" id="annivListToggleBtn" class="px-2.5 py-1 bg-pink-50 hover:bg-pink-100 border border-pink-200 text-pink-800 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">목록 펼치기 ▼</button>
+          </div>
+          <div id="annivListSectionBody" class="hidden mt-3 pt-3 border-t border-pink-100">
+            <div class="hidden md:block rounded-xl border border-pink-100 overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-pink-50 text-pink-900 border-b border-pink-100">
+                  <tr>
+                    <th class="py-3 px-4">구분</th>
+                    <th class="py-3 px-4">기념일 이름</th>
+                    <th class="py-3 px-4">등록 날짜</th>
+                    <th class="py-3 px-4 text-right">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="annivListBody" class="divide-y divide-gray-100"></tbody>
+              </table>
+            </div>
+            <div id="annivCardList" class="md:hidden space-y-2"></div>
+          </div>
         </div>
-        <div id="annivCardList" class="md:hidden space-y-2"></div>
       </div>
 
-      <!-- [하위 6] 백업 · 엑셀 내보내기 · 초기화 -->
+      <!-- [하위 6] 백업 · 엑셀 내보내기 · 초기화 (내 기기 백업 기본 접힘) -->
       <div id="sub5" class="sub-tab-content hidden box-magikarp p-4 sm:p-6 rounded-3xl shadow-sm space-y-5 sm:space-y-6">
         <div class="border-b border-orange-200 pb-3">
           <h2 class="title-font text-lg sm:text-xl text-orange-900">클라우드 자동백업 · 파일 백업 및 초기화</h2>
-          <p class="text-xs text-gray-500 mt-1">매월 첫 접속 시 클라우드에 자동백업이 생성되며, JSON 백업 및 엑셀(.xlsx) 내보내기도 지원합니다.</p>
+          <p class="text-xs text-gray-500 mt-1">매월 첫 접속 시 클라우드에 자동백업이 생성되며, 비상용 JSON 백업 및 엑셀(.xlsx) 내보내기도 지원합니다.</p>
         </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
           <div class="space-y-4">
@@ -1270,15 +1283,21 @@
               </div>
             </div>
 
-            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-orange-200 space-y-3">
-              <h3 class="font-bold text-sm text-orange-900 border-b pb-2">내 기기 백업 및 복원 (JSON)</h3>
-              <p class="text-xs text-gray-500 leading-relaxed">모든 설정값과 가계부 내역 전체를 <b>가계부이름_날짜.json</b> 파일로 저장하거나 복원합니다.</p>
-              <div class="flex flex-wrap gap-2.5 pt-1">
-                <button onclick="exportBackupJson()" class="px-4 py-2.5 btn-orange rounded-xl text-xs shadow-sm">백업 파일 다운로드 (.json)</button>
-                <label class="px-4 py-2.5 bg-gray-700 hover:bg-gray-800 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer">
-                  백업 파일 불러오기
-                  <input type="file" onchange="importBackupJson(event)" accept=".json" class="hidden">
-                </label>
+            <!-- 내 기기 백업 및 복원 (평상시 기본 접힘) -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-orange-200">
+              <div onclick="toggleCollapsibleSection('localBackupBody', 'localBackupToggleBtn', '펼치기 ▼', '접기 ▲')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                <h3 class="font-bold text-sm text-orange-900 truncate">내 기기 백업 및 복원 (JSON · 비상용)</h3>
+                <button type="button" id="localBackupToggleBtn" class="px-2.5 py-1 bg-orange-50 hover:bg-orange-100 border border-orange-200 text-orange-800 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">펼치기 ▼</button>
+              </div>
+              <div id="localBackupBody" class="hidden mt-3 pt-3 border-t border-orange-100 space-y-3">
+                <p class="text-xs text-gray-500 leading-relaxed">모든 설정값과 가계부 내역 전체를 <b>가계부이름_날짜.json</b> 파일로 저장하거나 복원합니다.</p>
+                <div class="flex flex-wrap gap-2.5 pt-1">
+                  <button onclick="exportBackupJson()" class="px-4 py-2.5 btn-orange rounded-xl text-xs shadow-sm">백업 파일 다운로드 (.json)</button>
+                  <label class="px-4 py-2.5 bg-gray-700 hover:bg-gray-800 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer">
+                    백업 파일 불러오기
+                    <input type="file" onchange="importBackupJson(event)" accept=".json" class="hidden">
+                  </label>
+                </div>
               </div>
             </div>
           </div>
