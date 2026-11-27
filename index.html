@@ -1193,7 +1193,7 @@
         </div>
       </div>
 
-      <!-- [하위 5] 기념일 관리 (등록 목록 기본 접힘 아코디언 적용) -->
+      <!-- [하위 5] 기념일 관리 (등록 목록 기본 접힘 + 올해 달력 표시일 열 추가) -->
       <div id="sub6" class="sub-tab-content hidden box-slowpoke p-4 sm:p-6 rounded-3xl shadow-sm space-y-5">
         <div class="border-b border-pink-200 pb-3">
           <h2 class="title-font text-lg sm:text-xl text-pink-900">기념일 관리 (양력 · 음력 자동 변환)</h2>
@@ -1253,6 +1253,7 @@
                     <th class="py-3 px-4">구분</th>
                     <th class="py-3 px-4">기념일 이름</th>
                     <th class="py-3 px-4">등록 날짜</th>
+                    <th id="annivDisplayYearHeader" class="py-3 px-4">2026년 달력 표시일</th>
                     <th class="py-3 px-4 text-right">관리</th>
                   </tr>
                 </thead>
@@ -1264,7 +1265,7 @@
         </div>
       </div>
 
-      <!-- [하위 6] 백업 · 엑셀 내보내기 · 초기화 (내 기기 백업 기본 접힘) -->
+      <!-- [하위 6] 백업 · 엑셀 내보내기 · 초기화 (내 기기 백업 · 초기화 카드 모두 기본 접힘) -->
       <div id="sub5" class="sub-tab-content hidden box-magikarp p-4 sm:p-6 rounded-3xl shadow-sm space-y-5 sm:space-y-6">
         <div class="border-b border-orange-200 pb-3">
           <h2 class="title-font text-lg sm:text-xl text-orange-900">클라우드 자동백업 · 파일 백업 및 초기화</h2>
@@ -1277,8 +1278,8 @@
                 <h3 class="font-bold text-sm text-blue-900">클라우드 월초 자동백업 (Firebase)</h3>
                 <button onclick="createManualCloudBackup()" class="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg text-[11px] whitespace-nowrap">+ 지금 백업 저장</button>
               </div>
-              <p class="text-xs text-gray-500">매달 처음 접속할 때 자동으로 1부씩 보관됩니다. (최대 24개월 보관)</p>
-              <div id="cloudBackupList" class="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+              <p class="text-xs text-gray-500">매달 처음 접속 시 자동 보관되며, 초기화 직전에도 안전백업이 자동 생성됩니다. (최대 24건 보관)</p>
+              <div id="cloudBackupList" class="space-y-2 max-h-[240px] overflow-y-auto pr-1">
                 <div class="text-xs text-gray-400 py-4 text-center">로그인 후 백업 목록을 확인할 수 있습니다.</div>
               </div>
             </div>
@@ -1326,9 +1327,14 @@
               </div>
             </div>
 
-            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-red-200 space-y-4">
-              <h3 class="font-bold text-sm text-red-700 border-b border-red-100 pb-2">데이터 초기화 (2가지 방식)</h3>
-              <div class="space-y-3">
+            <!-- 데이터 초기화 (평상시 기본 접힘 · 3중 안전잠금) -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-red-200">
+              <div onclick="toggleCollapsibleSection('resetDangerBody', 'resetDangerToggleBtn', '펼치기 ▼', '접기 ▲')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                <h3 class="font-bold text-sm text-red-700 truncate">데이터 초기화 (주의 · 안전잠금)</h3>
+                <button type="button" id="resetDangerToggleBtn" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">펼치기 ▼</button>
+              </div>
+              <div id="resetDangerBody" class="hidden mt-3 pt-3 border-t border-red-100 space-y-3">
+                <p class="text-[11px] text-gray-500 leading-relaxed">프로그램 기능·디자인 코드는 그대로 유지되며 데이터만 초기화됩니다. 실행 시 <b>확인 문구 입력</b> 후 <b>초기화 직전 클라우드 자동백업</b>이 먼저 저장됩니다.</p>
                 <div class="flex justify-between items-center bg-amber-50 p-3 rounded-xl border border-amber-200">
                   <div>
                     <div class="text-xs font-bold text-gray-800">가계부 내역만 초기화 (설정 유지)</div>
@@ -1339,7 +1345,7 @@
                 <div class="flex justify-between items-center bg-red-50 p-3 rounded-xl border border-red-200">
                   <div>
                     <div class="text-xs font-bold text-red-800">설정 포함 전체 프로그램 초기화</div>
-                    <div class="text-[11px] text-red-500">모든 설정과 내역을 맨 처음 상태로 되돌립니다.</div>
+                    <div class="text-[11px] text-red-500">모든 설정과 내역을 맨 처음 기본 샘플 상태로 되돌립니다.</div>
                   </div>
                   <button onclick="resetAllFactory()" class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-xs whitespace-nowrap ml-2">전체 초기화</button>
                 </div>

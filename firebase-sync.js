@@ -1,5 +1,5 @@
 // =========================================================
-// Firebase 로그인 보안 · 실시간 동기화 · 월초 자동백업 모듈
+// Firebase 로그인 보안 · 실시간 동기화 · 월초/초기화 직전 자동백업 모듈
 // =========================================================
 const firebaseConfig = {
     apiKey: "AIzaSyCODomoDzVSHIZaiYvrAuq9jU_1nFBDfyw",
@@ -238,7 +238,7 @@ async function syncDbToCloud(force = false) {
 }
 
 // =========================================================
-// 월초 자동백업 및 백업 목록 관리
+// 월초 자동백업 · 초기화 직전 안전백업 · 백업 목록/복원 관리
 // =========================================================
 async function checkAndRunMonthlyAutoBackup(user) {
     if (!fbDb || !user) return;
@@ -291,6 +291,41 @@ async function createManualCloudBackup() {
     }
 }
 
+// 초기화 실행 직전 자동 안전 백업 (실패 시 초기화 중단)
+async function createPreResetCloudBackup(reasonLabel) {
+    if (!fbDb || !fbAuth || !fbAuth.currentUser) {
+        return {
+            ok: false,
+            error: '클라우드에 로그인·연결된 상태가 아닙니다.\n데이터 유실 방지를 위해 오프라인 상태에서는 초기화를 중단합니다.'
+        };
+    }
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const docId = `prereset_${stamp}`;
+    const label = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} ${reasonLabel} 직전 자동백업`;
+
+    try {
+        await fbDb.collection('monthly_backups').doc(docId).set({
+            ym: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`,
+            label,
+            isSafetyBackup: true,
+            createdAt: now.toISOString(),
+            createdBy: fbAuth.currentUser.email || '',
+            txCount: Array.isArray(db.transactions) ? db.transactions.length : 0,
+            payload: JSON.stringify(db)
+        });
+        await pruneOldCloudBackups();
+        await renderCloudBackupList();
+        return { ok: true, label };
+    } catch (err) {
+        return {
+            ok: false,
+            error: `초기화 직전 클라우드 자동백업 저장에 실패해 초기화를 중단했습니다.\n(${err.message})`
+        };
+    }
+}
+
 async function pruneOldCloudBackups() {
     if (!fbDb) return;
     try {
@@ -315,7 +350,7 @@ async function renderCloudBackupList() {
     }
 
     try {
-        const snap = await fbDb.collection('monthly_backups').orderBy('createdAt', 'desc').limit(15).get();
+        const snap = await fbDb.collection('monthly_backups').orderBy('createdAt', 'desc').limit(20).get();
         if (snap.empty) {
             listEl.innerHTML = `<div class="text-xs text-gray-400 py-4 text-center">저장된 클라우드 백업이 아직 없습니다.</div>`;
             return;
@@ -324,12 +359,19 @@ async function renderCloudBackupList() {
         listEl.innerHTML = snap.docs.map(doc => {
             const d = doc.data();
             const dt = d.createdAt ? d.createdAt.slice(0, 10) : '';
-            const safeLabel = String(d.label || doc.id).replace(/'/g, "\\'");
+            const safeLabel = String(d.label || doc.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const isSafety = !!d.isSafetyBackup || doc.id.startsWith('prereset_');
+            const safetyBadge = isSafety
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold shrink-0 whitespace-nowrap">초기화 직전</span>`
+                : '';
             return `
                 <div class="flex flex-wrap justify-between items-center gap-2 p-2.5 rounded-xl bg-blue-50/40 border border-blue-100 text-xs">
-                    <div class="min-w-0">
-                        <div class="font-bold text-gray-800 truncate">${escHtml(d.label || doc.id)}</div>
-                        <div class="text-[11px] text-gray-400">생성일 ${dt} · 내역 ${d.txCount || 0}건</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            ${safetyBadge}
+                            <span class="font-bold text-gray-800 truncate">${escHtml(d.label || doc.id)}</span>
+                        </div>
+                        <div class="text-[11px] text-gray-400 mt-0.5">생성일 ${dt} · 내역 ${d.txCount || 0}건</div>
                     </div>
                     <div class="flex gap-1.5 shrink-0">
                         <button onclick="downloadCloudBackupJson('${doc.id}')" class="px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg font-bold text-[11px]">다운로드</button>
@@ -344,22 +386,31 @@ async function renderCloudBackupList() {
 
 async function restoreFromCloudBackup(docId, label) {
     if (!fbDb) return;
-    if (!confirm(`'${label}' 시점으로 가계부를 복원하시겠습니까?\n현재 데이터는 해당 백업 시점의 데이터로 덮어씌워집니다.`)) return;
 
     try {
         const snap = await fbDb.collection('monthly_backups').doc(docId).get();
         if (!snap.exists || !snap.data().payload) return alert('백업 데이터를 찾을 수 없습니다.');
         const parsed = JSON.parse(snap.data().payload);
-        if (parsed && parsed.config && parsed.categories) {
+        if (!parsed || !parsed.config || !parsed.categories) {
+            return alert('올바른 가계부 백업 데이터 형식이 아닙니다.');
+        }
+
+        const applyRestore = async () => {
             db = parsed;
             if (typeof migrateDbData === 'function') migrateDbData();
             localStorage.setItem('custom_budget_v2', JSON.stringify(db));
             if (typeof renderAll === 'function') renderAll();
             await syncDbToCloud(true);
             alert('선택한 백업 시점으로 복원이 완료되었습니다.');
+        };
+
+        if (typeof openRestorePreviewModal === 'function') {
+            openRestorePreviewModal(parsed, label, applyRestore);
+        } else if (confirm(`'${label}' 시점으로 가계부를 복원하시겠습니까?\n현재 데이터는 해당 백업 시점의 데이터로 덮어씌워집니다.`)) {
+            await applyRestore();
         }
     } catch (err) {
-        alert('복원 중 오류가 발생했습니다: ' + err.message);
+        alert('백업 데이터를 불러오는 중 오류가 발생했습니다: ' + err.message);
     }
 }
 

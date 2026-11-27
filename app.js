@@ -154,6 +154,18 @@ function getOwnerBadgeHtml(owner) {
     return `<span class="text-[10px] px-1.5 py-0.5 rounded font-bold whitespace-nowrap ${cls}">${escHtml(owner)}</span>`;
 }
 
+// 지출형 거래 또는 '지출 분석(고정비)에 포함' 체크된 정기 이체·저축 여부 판별
+function isTxIncludedInExpense(t) {
+    if (!t) return false;
+    if (getTypeBehavior(t.type) === 'expense') return true;
+    if (typeof t.includeInExpense === 'boolean') return t.includeInExpense;
+    if (t.autoTransferId && Array.isArray(db.autoTransfers)) {
+        const at = db.autoTransfers.find(a => a.id === t.autoTransferId);
+        if (at && at.includeInExpense) return true;
+    }
+    return false;
+}
+
 function migrateDbData() {
     if (!db.transactions) db.transactions = [];
     if (!db.cardEvents) db.cardEvents = [];
@@ -463,6 +475,17 @@ function getSolarDatesForAnniversaryInYear(anniv, year) {
     return exact.length > 0 ? exact : fallback29;
 }
 
+function formatAnnivSolarDisplay(anniv, year) {
+    const dates = getSolarDatesForAnniversaryInYear(anniv, year);
+    if (!dates || dates.length === 0) return '-';
+    const dowNames = ['일', '월', '화', '수', '목', '금', '토'];
+    return dates.map(dStr => {
+        const [, mm, dd] = dStr.split('-').map(Number);
+        const dow = dowNames[getDowFromStr(dStr)] || '';
+        return `${mm}월 ${dd}일 (${dow})`;
+    }).join(', ');
+}
+
 function getAnniversariesMapForYear(year) {
     const map = {};
     (db.anniversaries || []).forEach(a => {
@@ -650,6 +673,7 @@ let cfHideZeroCards = true;
 let selectedCatType = db.txTypes[0] ? db.txTypes[0].name : '지출';
 let selectedMainCat = '';
 let settingsAssetExpanded = {};
+let pendingRestoreConfirmFn = null;
 
 function saveDb() {
     localStorage.setItem('custom_budget_v2', JSON.stringify(db));
@@ -991,9 +1015,14 @@ function renderTab1() {
     let totalIn = 0, totalOut = 0, totalTransfer = 0;
     txs.forEach(t => {
         const amt = Number(t.amount) || 0, b = getTypeBehavior(t.type);
-        if (b === 'income') totalIn += amt;
-        else if (b === 'expense') totalOut += amt;
-        else totalTransfer += amt;
+        if (b === 'income') {
+            totalIn += amt;
+        } else if (b === 'expense' || isTxIncludedInExpense(t)) {
+            // 지출 분석과 동일하게 '고정비 포함' 체크된 정기 이체·저축도 총 지출에 합산
+            totalOut += amt;
+        } else {
+            totalTransfer += amt;
+        }
     });
     document.getElementById('sumIncome').textContent = `+${totalIn.toLocaleString()}원`;
     document.getElementById('sumExpense').textContent = `-${totalOut.toLocaleString()}원`;
@@ -1131,10 +1160,12 @@ function renderSelectedDayPanel(dayDues = []) {
     const dueHtml = renderPendingDueCardsHtml(dayDues, sy, sm);
     const txHtml = dayTxs.map(t => {
         const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
+        const isIncTransfer = isTr && isTxIncludedInExpense(t);
         const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
         const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
         const instBadge = (Number(t.installmentMonths) > 1) ? `<span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">${t.installmentMonths}개월 할부</span>` : '';
         const autoBadge = t.fromAutoTransfer ? `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-[10px]">정기</span>` : '';
+        const incBadge = isIncTransfer ? `<span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold text-[10px]">고정비 포함</span>` : '';
         const methodDisplay = isTr ? `${getAssetLabel(t.method)} → ${getAssetLabel(t.targetAsset)}` : getAssetLabel(t.method);
         return `
             <div class="bg-white p-3 rounded-xl border border-amber-100 flex flex-wrap justify-between items-center gap-2 text-xs">
@@ -1142,7 +1173,7 @@ function renderSelectedDayPanel(dayDues = []) {
                     <div class="flex items-center gap-1.5 flex-wrap">
                         <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold text-[10px]">${escHtml(t.user)}</span>
                         <span class="font-bold text-amber-900">${escHtml(t.catMain)}${t.catSub ? ' · ' + escHtml(t.catSub) : ''}</span>
-                        ${autoBadge}${instBadge}<span class="text-gray-800">${escHtml(t.memo)}</span>
+                        ${autoBadge}${incBadge}${instBadge}<span class="text-gray-800">${escHtml(t.memo)}</span>
                     </div>
                     <div class="text-[11px] text-gray-400">${escHtml(t.type)} | ${escHtml(methodDisplay)}</div>
                 </div>
@@ -1170,20 +1201,35 @@ function renderListView() {
     if (txs.length === 0) { tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-gray-400">조건에 맞는 내역이 없습니다.</td></tr>`; return; }
     tbody.innerHTML = txs.map(t => {
         const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
+        const isIncTransfer = isTr && isTxIncludedInExpense(t);
         const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
         const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
-        const instBadge = (Number(t.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold mr-1">${t.installmentMonths}개월 할부</span>` : '';
-        const autoBadge = t.fromAutoTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold mr-1">정기</span>` : '';
-        const methodDisplay = isTr ? `${getAssetLabel(t.method)} → ${getAssetLabel(t.targetAsset)}` : getAssetLabel(t.method);
+        const instBadge = (Number(t.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold mr-1 whitespace-nowrap">${t.installmentMonths}개월</span>` : '';
+        const autoBadge = t.fromAutoTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold mr-1 whitespace-nowrap">정기</span>` : '';
+        const incBadge = isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold mr-1 whitespace-nowrap">고정비</span>` : '';
+        const shortDate = t.date ? t.date.slice(2).replace(/-/g, '.') : '';
+
+        const catHtml = `
+            <div class="flex items-center gap-1 whitespace-nowrap">
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">${escHtml(t.type)}</span>
+                <span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>
+            </div>
+            ${t.catSub ? `<div class="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">${escHtml(t.catSub)}</div>` : ''}`;
+
+        const methodHtml = isTr
+            ? `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>
+               <div class="text-[10px] text-purple-600 whitespace-nowrap">→ ${escHtml(getAssetLabel(t.targetAsset))}</div>`
+            : `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>`;
+
         return `
-            <tr class="hover:bg-amber-50/40">
-                <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap">${t.date}</td>
-                <td class="py-2.5 px-3 font-bold text-gray-700 whitespace-nowrap">${escHtml(t.user)}</td>
-                <td class="py-2.5 px-3 whitespace-nowrap"><span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold mr-1">${escHtml(t.type)}</span><span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>${t.catSub ? `<span class="text-gray-400">/${escHtml(t.catSub)}</span>` : ''}</td>
-                <td class="py-2.5 px-3 text-gray-800">${autoBadge}${instBadge}${escHtml(t.memo)}</td>
-                <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap">${escHtml(methodDisplay)}</td>
-                <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${amtColor}">${sign}${Number(t.amount).toLocaleString()}원</td>
-                <td class="py-2.5 px-3 text-center whitespace-nowrap space-x-1">
+            <tr class="hover:bg-amber-50/40 align-middle">
+                <td class="py-2.5 px-2 text-gray-500 whitespace-nowrap text-[11px]" title="${escHtml(t.date)}">${shortDate}</td>
+                <td class="py-2.5 px-2 font-bold text-gray-700 whitespace-nowrap">${escHtml(t.user)}</td>
+                <td class="py-2.5 px-2.5">${catHtml}</td>
+                <td class="py-2.5 px-2.5 text-gray-800 min-w-[160px] sm:min-w-[210px] leading-snug break-words">${autoBadge}${incBadge}${instBadge}${escHtml(t.memo)}</td>
+                <td class="py-2.5 px-2.5 text-[11px] leading-snug">${methodHtml}</td>
+                <td class="py-2.5 px-2.5 text-right font-bold whitespace-nowrap ${amtColor}">${sign}${Number(t.amount).toLocaleString()}원</td>
+                <td class="py-2.5 px-2 text-center whitespace-nowrap space-x-1">
                     <button onclick="startEditTx('${t.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
                     <button onclick="deleteTx('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
                 </td>
@@ -1780,7 +1826,7 @@ function renderCfListView(passedEntries) {
                 <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap">${e.date}</td>
                 <td class="py-2.5 px-3 whitespace-nowrap">${badge}</td>
                 <td class="py-2.5 px-3 font-bold text-gray-700 whitespace-nowrap">${escHtml(e.account)}</td>
-                <td class="py-2.5 px-3 text-gray-800">${escHtml(e.title)} <span class="text-[10px] text-gray-400 ml-1">${escHtml(e.sub)}</span></td>
+                <td class="py-2.5 px-3 text-gray-800 min-w-[160px] leading-snug">${escHtml(e.title)} <span class="text-[10px] text-gray-400 ml-1">${escHtml(e.sub)}</span></td>
                 <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${amtColor}">${e.kind === 'in' ? '+' : '-'}${e.amount.toLocaleString()}원</td>
                 <td class="py-2.5 px-3 text-center whitespace-nowrap">${e.sourceType === 'cardEvent' ? `<button onclick="cancelCardEvent('${e.eventId}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">취소</button>` : '<span class="text-gray-300">-</span>'}</td>
             </tr>`;
@@ -1815,7 +1861,7 @@ function renderAllSettings() {
 
     const fixedExpected = (typeof getMonthlyFixedExpenseHint === 'function')
         ? getMonthlyFixedExpenseHint()
-        : (db.autoTransfers || []).filter(a => a.active !== false && a.cycleType !== 'specific' && getTypeBehavior(a.type) === 'expense').reduce((s, a) => s + (Number(a.amount) || 0), 0);
+        : (db.autoTransfers || []).filter(a => a.active !== false && a.cycleType !== 'specific' && (getTypeBehavior(a.type) === 'expense' || !!a.includeInExpense)).reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const hintEl = document.getElementById('cfgFixedRefHint');
     if (hintEl) hintEl.textContent = `참고: 등록된 매월 예상 고정비 합계 ${fixedExpected.toLocaleString()}원`;
 
@@ -2491,11 +2537,15 @@ function renderAnniversaries() {
     const tbody = document.getElementById('annivListBody');
     const cardEl = document.getElementById('annivCardList');
     const badgeEl = document.getElementById('annivTotalBadge');
+    const curYear = todayObj.getFullYear();
+    const yearHeaderEl = document.getElementById('annivDisplayYearHeader');
+    if (yearHeaderEl) yearHeaderEl.textContent = `${curYear}년 달력 표시일`;
+
     const list = db.anniversaries || [];
     if (badgeEl) badgeEl.textContent = `${list.length}건`;
 
     if (list.length === 0) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-gray-400">등록된 기념일이 없습니다.</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-gray-400">등록된 기념일이 없습니다.</td></tr>`;
         if (cardEl) cardEl.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-pink-200 text-center text-xs text-gray-400">등록된 기념일이 없습니다.</div>`;
         return;
     }
@@ -2503,29 +2553,37 @@ function renderAnniversaries() {
         (Number(a.month) - Number(b.month)) || (Number(a.day) - Number(b.day)) || compareKorean(a.name, b.name)
     );
     if (tbody) {
-        tbody.innerHTML = sorted.map(a => `
+        tbody.innerHTML = sorted.map(a => {
+            const solarText = formatAnnivSolarDisplay(a, curYear);
+            return `
             <tr class="hover:bg-pink-50/30">
                 <td class="py-3 px-4 whitespace-nowrap"><span class="px-2 py-0.5 ${a.calType==='lunar'?'bg-purple-50 text-purple-700':'bg-pink-50 text-pink-700'} rounded font-bold">${a.calType==='lunar'?'음력':'양력'}</span></td>
                 <td class="py-3 px-4 font-bold text-gray-800 whitespace-nowrap">${escHtml(a.name)}</td>
                 <td class="py-3 px-4 text-gray-600 whitespace-nowrap">${a.calType==='lunar'?'음력 ':'양력 '}${a.month}월 ${a.day}일</td>
+                <td class="py-3 px-4 font-bold whitespace-nowrap ${a.calType==='lunar'?'text-purple-700':'text-gray-700'}">${escHtml(solarText)}</td>
                 <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap"><button onclick="startEditAnniv('${a.id}')" class="px-2.5 py-1 bg-gray-100 rounded font-bold">수정</button><button onclick="deleteAnniv('${a.id}')" class="px-2.5 py-1 bg-red-50 text-red-600 rounded font-bold">삭제</button></td>
-            </tr>`).join('');
+            </tr>`;
+        }).join('');
     }
     if (cardEl) {
-        cardEl.innerHTML = sorted.map(a => `
+        cardEl.innerHTML = sorted.map(a => {
+            const solarText = formatAnnivSolarDisplay(a, curYear);
+            return `
             <div class="bg-white p-3 rounded-2xl border border-pink-200 flex justify-between items-center gap-2 text-xs">
                 <div class="min-w-0 space-y-0.5">
                     <div class="flex items-center gap-1.5">
                         <span class="px-1.5 py-0.5 ${a.calType==='lunar'?'bg-purple-50 text-purple-700':'bg-pink-50 text-pink-700'} rounded font-bold text-[10px] shrink-0 whitespace-nowrap">${a.calType==='lunar'?'음력':'양력'}</span>
                         <span class="font-bold text-sm text-gray-800 truncate">${escHtml(a.name)}</span>
                     </div>
-                    <div class="text-[11px] text-gray-500">${a.calType==='lunar'?'음력 ':'양력 '}${a.month}월 ${a.day}일</div>
+                    <div class="text-[11px] text-gray-500">등록: ${a.calType==='lunar'?'음력 ':'양력 '}${a.month}월 ${a.day}일</div>
+                    <div class="text-[11px] font-bold ${a.calType==='lunar'?'text-purple-700':'text-gray-700'}">${curYear}년 달력 표시일: ${escHtml(solarText)}</div>
                 </div>
                 <div class="flex gap-1.5 shrink-0">
                     <button onclick="startEditAnniv('${a.id}')" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-[11px] text-gray-700 whitespace-nowrap">수정</button>
                     <button onclick="deleteAnniv('${a.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 rounded-lg font-bold text-[11px] text-red-600 whitespace-nowrap">삭제</button>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 }
 function saveAnniversary() {
@@ -2556,8 +2614,79 @@ function deleteAnniv(id) {
 }
 
 // =========================================================
-// 백업 (JSON) · 엑셀 다운로드 (.xlsx) · 초기화
+// 백업 (JSON) · 복원 미리보기 · 엑셀 다운로드 · 안전 초기화
 // =========================================================
+function summarizeDbCounts(targetDb) {
+    const d = targetDb || {};
+    return {
+        txCount: Array.isArray(d.transactions) ? d.transactions.length : 0,
+        evCount: Array.isArray(d.cardEvents) ? d.cardEvents.length : 0,
+        assetCount: Array.isArray(d.assets) ? d.assets.length : 0,
+        atCount: Array.isArray(d.autoTransfers) ? d.autoTransfers.length : 0,
+        annivCount: Array.isArray(d.anniversaries) ? d.anniversaries.length : 0,
+        usersText: Array.isArray(d.users) && d.users.length ? d.users.join(', ') : '-'
+    };
+}
+
+function openRestorePreviewModal(parsedDb, sourceLabel, onConfirm) {
+    const cur = summarizeDbCounts(db);
+    const bak = summarizeDbCounts(parsedDb);
+    pendingRestoreConfirmFn = onConfirm;
+
+    openCustomModal(`
+        <div class="flex justify-between items-start gap-2 border-b border-blue-100 pb-3">
+            <div>
+                <h3 class="title-font text-lg text-blue-900">백업 데이터 복원 미리보기</h3>
+                <p class="text-[11px] text-gray-500 mt-0.5">${escHtml(sourceLabel)}</p>
+            </div>
+            <button onclick="pendingRestoreConfirmFn=null; closeCustomModal();" class="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-600">닫기</button>
+        </div>
+
+        <p class="text-xs text-gray-600 leading-relaxed">아래 요약 내용을 확인해 주세요. 복원을 실행하면 <b>현재 데이터와 클라우드 동기화 내용</b>이 선택한 백업 시점으로 덮어씌워집니다.</p>
+
+        <div class="rounded-2xl border border-blue-200 overflow-hidden text-xs">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-blue-50 text-blue-900 border-b border-blue-100">
+                    <tr>
+                        <th class="py-2 px-3">항목</th>
+                        <th class="py-2 px-3 text-right">현재 데이터</th>
+                        <th class="py-2 px-3 text-right">복원될 백업</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 bg-white">
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">가계부 내역</td><td class="py-2 px-3 text-right text-gray-500">${cur.txCount.toLocaleString()}건</td><td class="py-2 px-3 text-right font-bold text-blue-700">${bak.txCount.toLocaleString()}건</td></tr>
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">카드 정산·선결제</td><td class="py-2 px-3 text-right text-gray-500">${cur.evCount.toLocaleString()}건</td><td class="py-2 px-3 text-right font-bold text-blue-700">${bak.evCount.toLocaleString()}건</td></tr>
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">자산·카드·부채</td><td class="py-2 px-3 text-right text-gray-500">${cur.assetCount.toLocaleString()}건</td><td class="py-2 px-3 text-right font-bold text-blue-700">${bak.assetCount.toLocaleString()}건</td></tr>
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">정기 지출 항목</td><td class="py-2 px-3 text-right text-gray-500">${cur.atCount.toLocaleString()}건</td><td class="py-2 px-3 text-right font-bold text-blue-700">${bak.atCount.toLocaleString()}건</td></tr>
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">등록된 기념일</td><td class="py-2 px-3 text-right text-gray-500">${cur.annivCount.toLocaleString()}건</td><td class="py-2 px-3 text-right font-bold text-blue-700">${bak.annivCount.toLocaleString()}건</td></tr>
+                    <tr><td class="py-2 px-3 font-bold text-gray-700">사용자 목록</td><td class="py-2 px-3 text-right text-gray-500 truncate max-w-[110px]">${escHtml(cur.usersText)}</td><td class="py-2 px-3 text-right font-bold text-blue-700 truncate max-w-[110px]">${escHtml(bak.usersText)}</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="pendingRestoreConfirmFn=null; closeCustomModal();" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs">취소</button>
+            <button id="restoreConfirmBtn" onclick="executePendingRestore()" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl text-xs shadow-sm">이 백업으로 복원하기</button>
+        </div>`);
+}
+
+async function executePendingRestore() {
+    if (typeof pendingRestoreConfirmFn !== 'function') return;
+    const btn = document.getElementById('restoreConfirmBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '복원 적용 중...';
+    }
+    const fn = pendingRestoreConfirmFn;
+    pendingRestoreConfirmFn = null;
+    try {
+        closeCustomModal();
+        await fn();
+    } catch (err) {
+        alert('복원 중 오류가 발생했습니다: ' + err.message);
+    }
+}
+
 function exportBackupJson() {
     const todayStr = formatYMD(new Date());
     const a = document.createElement('a');
@@ -2573,14 +2702,17 @@ function importBackupJson(e) {
         try {
             const loaded = JSON.parse(evt.target.result);
             if (loaded && loaded.config && loaded.categories) {
-                db = loaded;
-                migrateDbData();
-                saveDb();
-                alert('백업 파일이 성공적으로 복원되었습니다.');
+                openRestorePreviewModal(loaded, `파일 복원: ${file.name}`, async () => {
+                    db = loaded;
+                    migrateDbData();
+                    saveDb();
+                    alert('백업 파일이 성공적으로 복원되었습니다.');
+                });
             } else alert('올바른 가계부 백업 파일 형식이 아닙니다.');
         } catch (err) { alert('파일을 읽는 중 오류가 발생했습니다.'); }
     };
     reader.readAsText(file);
+    e.target.value = '';
 }
 
 function toggleExcelRangeBox() {
@@ -2675,14 +2807,86 @@ function exportExcelXlsx() {
 }
 
 function resetTransactionsOnly() {
-    if (confirm('설정과 정기 항목 틀은 유지하고 입력된 가계부 내역과 정산 기록만 모두 초기화하시겠습니까?')) {
-        db.transactions = []; db.cardEvents = []; saveDb(); alert('가계부 내역이 모두 초기화되었습니다.');
-    }
+    openResetConfirmModal('tx');
 }
 function resetAllFactory() {
-    if (confirm('경고: 모든 설정과 내역을 맨 처음 상태로 초기화(프로그램 초기화)하시겠습니까?')) {
-        db = getDefaultDb(); saveDb(); alert('모든 설정과 내역이 초기 상태로 되돌아갔습니다.');
+    openResetConfirmModal('all');
+}
+
+function openResetConfirmModal(mode) {
+    const isAll = (mode === 'all');
+    const keyword = isAll ? '전체초기화' : '내역초기화';
+    const title = isAll ? '설정 포함 전체 초기화' : '가계부 내역만 초기화';
+    const desc = isAll
+        ? '사용자·카테고리·자산·정기항목·기념일 및 모든 거래 내역이 기본 샘플 상태로 초기화됩니다. (최신 프로그램 기능과 디자인 코드는 유지됩니다.)'
+        : '설정(사용자·카테고리·자산·정기항목·기념일)은 그대로 유지하고, 입력한 거래 내역과 카드 정산 기록만 모두 삭제합니다.';
+    const btnCls = isAll ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600';
+
+    openCustomModal(`
+        <h3 class="title-font text-lg ${isAll ? 'text-red-700' : 'text-amber-900'}">${title}</h3>
+        <p class="text-xs text-gray-600 leading-relaxed">${desc}</p>
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-[11px] text-blue-900 space-y-1">
+            <div class="font-bold">초기화 직전 자동 안전백업이 먼저 실행됩니다</div>
+            <p>실행 시 현재 데이터가 클라우드 백업함에 <b>[초기화 직전 자동백업]</b>으로 자동 저장된 뒤 초기화됩니다. 클라우드 저장에 실패하면 데이터 보호를 위해 초기화가 중단됩니다.</p>
+        </div>
+        <div class="space-y-2 text-xs pt-1">
+            <label class="block font-bold text-gray-700">실행하려면 아래 칸에 <span class="text-rose-600 underline">${keyword}</span> 라고 직접 입력해 주세요.</label>
+            <input type="text" id="resetConfirmKeywordInput" oninput="onResetKeywordInput('${keyword}')" placeholder="${keyword}" class="w-full p-2.5 border border-gray-300 rounded-xl text-sm font-bold focus:outline-none">
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="closeCustomModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs">취소</button>
+            <button id="resetExecuteBtn" disabled onclick="executeSafeReset('${mode}')" class="px-4 py-2 ${btnCls} text-white font-bold rounded-xl text-xs shadow-sm opacity-40 cursor-not-allowed">초기화 실행</button>
+        </div>`);
+}
+
+function onResetKeywordInput(expectedKeyword) {
+    const inp = document.getElementById('resetConfirmKeywordInput');
+    const btn = document.getElementById('resetExecuteBtn');
+    if (!inp || !btn) return;
+    const matched = inp.value.trim() === expectedKeyword;
+    btn.disabled = !matched;
+    btn.classList.toggle('opacity-40', !matched);
+    btn.classList.toggle('cursor-not-allowed', !matched);
+}
+
+async function executeSafeReset(mode) {
+    const isAll = (mode === 'all');
+    const expectedKeyword = isAll ? '전체초기화' : '내역초기화';
+    const reasonLabel = isAll ? '전체 초기화' : '내역 초기화';
+    const inp = document.getElementById('resetConfirmKeywordInput');
+    if (!inp || inp.value.trim() !== expectedKeyword) return;
+
+    const btn = document.getElementById('resetExecuteBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '클라우드 안전백업 저장 중...';
     }
+
+    if (typeof createPreResetCloudBackup === 'function') {
+        const res = await createPreResetCloudBackup(reasonLabel);
+        if (!res.ok) {
+            alert(res.error);
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '초기화 실행';
+            }
+            return;
+        }
+    }
+
+    if (isAll) {
+        db = getDefaultDb();
+    } else {
+        db.transactions = [];
+        db.cardEvents = [];
+    }
+
+    closeCustomModal();
+    saveDb();
+    alert(
+        (isAll ? '전체 초기화가 완료되었습니다.' : '가계부 내역 초기화가 완료되었습니다.') +
+        '\n\n직전 데이터는 [클라우드 백업 목록] 맨 위에 자동 안전백업으로 보관되어 언제든 복원할 수 있습니다.'
+    );
 }
 
 // 숫자 입력칸 포커스 시 값이 '0'이면 자동으로 비워 오타 방지
