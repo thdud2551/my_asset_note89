@@ -1,5 +1,5 @@
 // =========================================================
-// [4. 지출 분석] 전용 모듈 (멀티 사용자 · 고정비 포함 이체 반영 · 빈 달 제외 추이)
+// [4. 지출 분석] 전용 모듈 (소비기준 할부 월분할 · 고정비 포함 이체 · 빈 달 제외 추이)
 // =========================================================
 const DONUT_PALETTE = [
     '#FF8787', '#FFD43B', '#74C0FC', '#63E6BE', '#B197FC',
@@ -109,16 +109,44 @@ function getSpendItemsForMonth(year, month, basis) {
         db.transactions.forEach(t => {
             if (!matchesGlobalUser(t.user)) return;
             if (!isTxIncludedInSummaryExpense(t)) return;
-            if (t.date < monthStart || t.date > monthEnd) return;
+            if (!t.date || t.date.length < 7) return;
+
+            const totalAmt = Number(t.amount) || 0;
+            if (totalAmt <= 0) return;
+
+            const months = Number(t.installmentMonths) || 1;
             const mId = resolveToAssetId(t.method);
-            items.push({
-                amount: Number(t.amount) || 0,
-                catMain: t.catMain || '미분류',
-                catSub: t.catSub || '',
-                methodId: mId,
-                method: getAssetLabel(mId),
-                isFixed: !!t.fromAutoTransfer || (getTypeBehavior(t.type) !== 'expense')
-            });
+            const isFixed = !!t.fromAutoTransfer || (getTypeBehavior(t.type) !== 'expense');
+
+            if (months > 1) {
+                // 소비 기준에서도 할부는 결제 월부터 N개월간 월 분할 금액으로 집계
+                const [txY, txM] = t.date.split('-').map(Number);
+                const diff = (year - txY) * 12 + (month - txM);
+                if (diff >= 0 && diff < months) {
+                    const idx = diff + 1;
+                    const base = Math.floor(totalAmt / months);
+                    const rem = totalAmt - (base * months);
+                    const monthlyAmt = (idx === 1) ? (base + rem) : base;
+                    items.push({
+                        amount: monthlyAmt,
+                        catMain: t.catMain || '미분류',
+                        catSub: t.catSub || '',
+                        methodId: mId,
+                        method: getAssetLabel(mId),
+                        isFixed
+                    });
+                }
+            } else {
+                if (t.date < monthStart || t.date > monthEnd) return;
+                items.push({
+                    amount: totalAmt,
+                    catMain: t.catMain || '미분류',
+                    catSub: t.catSub || '',
+                    methodId: mId,
+                    method: getAssetLabel(mId),
+                    isFixed
+                });
+            }
         });
     } else {
         db.transactions.forEach(t => {
@@ -182,7 +210,7 @@ function renderTab3() {
     document.getElementById('sum3TotalLabel').textContent = isYear
         ? `${sum3Year}년 ${natureLabel} 지출`
         : `이번 달 ${natureLabel} 지출`;
-    document.getElementById('sum3BasisBadge').textContent = `${sum3Basis === 'consume' ? '소비' : '결제·출금'} · ${natureLabel}`;
+    document.getElementById('sum3BasisBadge').textContent = `${sum3Basis === 'consume' ? '소비(할부분할)' : '결제·출금'} · ${natureLabel}`;
     document.getElementById('sum3EditBudgetBtn').classList.toggle('hidden', isYear);
 
     const allItems = getSpendItemsForPeriod(sum3Year, sum3Month, sum3Mode, sum3Basis);

@@ -16,6 +16,8 @@ let fbDb = null;
 let fbUnsubscribe = null;
 let fbIsApplyingRemote = false;
 let fbInitialLoaded = false;
+let fbBackupShowAll = false;
+let fbCachedBackupDocs = [];
 const fbSessionId = 'S_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
 function updateSyncBadge(status, text) {
@@ -90,6 +92,7 @@ function initFirebaseModule() {
                     fbUnsubscribe = null;
                 }
                 fbInitialLoaded = false;
+                fbCachedBackupDocs = [];
                 setAppLocked(true);
                 updateSyncBadge('offline', '잠금됨');
             }
@@ -238,7 +241,7 @@ async function syncDbToCloud(force = false) {
 }
 
 // =========================================================
-// 월초 자동백업 · 초기화 직전 안전백업 · 백업 목록/복원 관리
+// 월초 자동백업 · 초기화 직전 안전백업 · 백업 목록(최근 3건 + 더보기)
 // =========================================================
 async function checkAndRunMonthlyAutoBackup(user) {
     if (!fbDb || !user) return;
@@ -341,6 +344,54 @@ async function pruneOldCloudBackups() {
     }
 }
 
+function toggleCloudBackupShowAll() {
+    fbBackupShowAll = !fbBackupShowAll;
+    drawCloudBackupListFromCache();
+}
+
+function drawCloudBackupListFromCache() {
+    const listEl = document.getElementById('cloudBackupList');
+    if (!listEl) return;
+
+    if (!fbCachedBackupDocs || fbCachedBackupDocs.length === 0) {
+        listEl.innerHTML = `<div class="text-xs text-gray-400 py-4 text-center">저장된 클라우드 백업이 아직 없습니다.</div>`;
+        return;
+    }
+
+    const visibleDocs = fbBackupShowAll ? fbCachedBackupDocs : fbCachedBackupDocs.slice(0, 3);
+    const hiddenCount = fbCachedBackupDocs.length - 3;
+
+    const cardsHtml = visibleDocs.map(({ id, data: d }) => {
+        const dt = d.createdAt ? d.createdAt.slice(0, 10) : '';
+        const safeLabel = String(d.label || id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const isSafety = !!d.isSafetyBackup || id.startsWith('prereset_');
+        const safetyBadge = isSafety
+            ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold shrink-0 whitespace-nowrap">초기화 직전</span>`
+            : '';
+        return `
+            <div class="flex flex-wrap justify-between items-center gap-2 p-2.5 rounded-xl bg-blue-50/40 border border-blue-100 text-xs">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        ${safetyBadge}
+                        <span class="font-bold text-gray-800 truncate">${escHtml(d.label || id)}</span>
+                    </div>
+                    <div class="text-[11px] text-gray-400 mt-0.5">생성일 ${dt} · 내역 ${d.txCount || 0}건</div>
+                </div>
+                <div class="flex gap-1.5 shrink-0">
+                    <button onclick="downloadCloudBackupJson('${id}')" class="px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg font-bold text-[11px]">다운로드</button>
+                    <button onclick="restoreFromCloudBackup('${id}', '${safeLabel}')" class="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold text-[11px]">복원</button>
+                </div>
+            </div>`;
+    }).join('');
+
+    const toggleHtml = hiddenCount > 0 ? `
+        <button type="button" onclick="toggleCloudBackupShowAll()" class="w-full py-2 mt-1 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 font-bold rounded-xl text-[11px] transition">
+            ${fbBackupShowAll ? '최근 3건만 보기 ▲' : `이전 백업 더보기 (${hiddenCount}건) ▼`}
+        </button>` : '';
+
+    listEl.innerHTML = cardsHtml + toggleHtml;
+}
+
 async function renderCloudBackupList() {
     const listEl = document.getElementById('cloudBackupList');
     if (!listEl) return;
@@ -350,35 +401,9 @@ async function renderCloudBackupList() {
     }
 
     try {
-        const snap = await fbDb.collection('monthly_backups').orderBy('createdAt', 'desc').limit(20).get();
-        if (snap.empty) {
-            listEl.innerHTML = `<div class="text-xs text-gray-400 py-4 text-center">저장된 클라우드 백업이 아직 없습니다.</div>`;
-            return;
-        }
-
-        listEl.innerHTML = snap.docs.map(doc => {
-            const d = doc.data();
-            const dt = d.createdAt ? d.createdAt.slice(0, 10) : '';
-            const safeLabel = String(d.label || doc.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const isSafety = !!d.isSafetyBackup || doc.id.startsWith('prereset_');
-            const safetyBadge = isSafety
-                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold shrink-0 whitespace-nowrap">초기화 직전</span>`
-                : '';
-            return `
-                <div class="flex flex-wrap justify-between items-center gap-2 p-2.5 rounded-xl bg-blue-50/40 border border-blue-100 text-xs">
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                            ${safetyBadge}
-                            <span class="font-bold text-gray-800 truncate">${escHtml(d.label || doc.id)}</span>
-                        </div>
-                        <div class="text-[11px] text-gray-400 mt-0.5">생성일 ${dt} · 내역 ${d.txCount || 0}건</div>
-                    </div>
-                    <div class="flex gap-1.5 shrink-0">
-                        <button onclick="downloadCloudBackupJson('${doc.id}')" class="px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg font-bold text-[11px]">다운로드</button>
-                        <button onclick="restoreFromCloudBackup('${doc.id}', '${safeLabel}')" class="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold text-[11px]">복원</button>
-                    </div>
-                </div>`;
-        }).join('');
+        const snap = await fbDb.collection('monthly_backups').orderBy('createdAt', 'desc').limit(24).get();
+        fbCachedBackupDocs = snap.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+        drawCloudBackupListFromCache();
     } catch (err) {
         listEl.innerHTML = `<div class="text-xs text-rose-500 py-3 text-center">백업 목록을 불러오지 못했습니다.</div>`;
     }

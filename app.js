@@ -785,8 +785,57 @@ function renderAll() {
 }
 
 // =========================================================
-// [1. 가계부] 로직
+// [1. 가계부] 로직 (할부 결제일 기준 월 분할 표시 · 모바일 카드 리스트 뷰)
 // =========================================================
+function getExpandedTxEntriesForRange(startStr, endStr) {
+    const entries = [];
+    (db.transactions || []).forEach(t => {
+        if (!matchesGlobalUser(t.user)) return;
+        if (!t.date) return;
+
+        const b = getTypeBehavior(t.type);
+        const months = Number(t.installmentMonths) || 1;
+        const totalAmt = Number(t.amount) || 0;
+
+        if (b === 'expense' && months > 1) {
+            const [ty, tm, td] = t.date.split('-').map(Number);
+            const base = Math.floor(totalAmt / months);
+            const rem = totalAmt - (base * months);
+
+            for (let idx = 1; idx <= months; idx++) {
+                const dispDate = (idx === 1) ? t.date : makeClampedDate(ty, tm, idx - 1, td);
+                if (dispDate >= startStr && dispDate <= endStr) {
+                    const dispAmt = (idx === 1) ? (base + rem) : base;
+                    entries.push({
+                        ...t,
+                        displayDate: dispDate,
+                        displayAmount: dispAmt,
+                        originalDate: t.date,
+                        totalAmount: totalAmt,
+                        instIndex: idx,
+                        instMonths: months,
+                        isInstallmentSlice: true
+                    });
+                }
+            }
+        } else {
+            if (t.date >= startStr && t.date <= endStr) {
+                entries.push({
+                    ...t,
+                    displayDate: t.date,
+                    displayAmount: totalAmt,
+                    originalDate: t.date,
+                    totalAmount: totalAmt,
+                    instIndex: 1,
+                    instMonths: 1,
+                    isInstallmentSlice: false
+                });
+            }
+        }
+    });
+    return entries;
+}
+
 function syncTxFormOptions() {
     const isEditing = !!document.getElementById('editTxId').value;
     const prevUser = document.getElementById('txUser').value;
@@ -956,8 +1005,9 @@ function startEditTx(id) {
     if (txFormEl && txFormEl.classList.contains('hidden')) txFormEl.classList.remove('hidden');
 
     const behavior = getTypeBehavior(t.type);
+    const months = Number(t.installmentMonths) || 1;
     document.getElementById('editTxId').value = t.id;
-    document.getElementById('txFormTitle').textContent = '내역 수정 중';
+    document.getElementById('txFormTitle').textContent = months > 1 ? '할부 원본 내역 수정 중' : '내역 수정 중';
     document.getElementById('txSubmitBtn').textContent = '수정 내용 저장';
     document.getElementById('txCancelEditBtn').classList.remove('hidden');
     document.getElementById('txDate').value = t.date;
@@ -975,7 +1025,6 @@ function startEditTx(id) {
     }
     document.getElementById('txMemo').value = t.memo;
     document.getElementById('txAmount').value = formatNumberToInput(t.amount);
-    const months = Number(t.installmentMonths) || 1;
     document.getElementById('txIsInstallment').checked = months > 1;
     toggleInstallmentMonths(months > 1);
     if (months > 1) document.getElementById('txInstallmentMonths').value = months;
@@ -996,7 +1045,12 @@ function resetTxForm() {
 
 function deleteTx(id) {
     const t = db.transactions.find(x => x.id === id);
-    if (t && confirm(`'${t.memo}' (${Number(t.amount).toLocaleString()}원) 내역을 삭제하시겠습니까?`)) {
+    if (!t) return;
+    const months = Number(t.installmentMonths) || 1;
+    const msg = months > 1
+        ? `'${t.memo}' (${months}개월 할부 · 총 ${Number(t.amount).toLocaleString()}원, 원결제일 ${t.date}) 원본 내역과 모든 할부 회차를 삭제하시겠습니까?`
+        : `'${t.memo}' (${Number(t.amount).toLocaleString()}원) 내역을 삭제하시겠습니까?`;
+    if (confirm(msg)) {
         db.transactions = db.transactions.filter(x => x.id !== id);
         db.cardEvents = db.cardEvents.filter(e => e.txId !== id);
         if (document.getElementById('editTxId').value === id) resetTxForm();
@@ -1004,36 +1058,38 @@ function deleteTx(id) {
     }
 }
 
-function getFilteredPeriodTransactions() {
+function getFilteredPeriodEntries() {
     const { start, end } = getViewPeriodRange();
-    return db.transactions.filter(t => matchesGlobalUser(t.user) && t.date >= start && t.date <= end);
+    return getExpandedTxEntriesForRange(start, end);
 }
 
 function renderTab1() {
     const period = getViewPeriodRange();
-    const txs = getFilteredPeriodTransactions();
-    let totalIn = 0, totalOut = 0, totalTransfer = 0;
-    txs.forEach(t => {
-        const amt = Number(t.amount) || 0, b = getTypeBehavior(t.type);
+    const entries = getFilteredPeriodEntries();
+    let totalIn = 0, totalOut = 0, totalVoucher = 0;
+
+    entries.forEach(t => {
+        const amt = Number(t.displayAmount) || 0, b = getTypeBehavior(t.type);
         if (b === 'income') {
             totalIn += amt;
         } else if (b === 'expense' || isTxIncludedInExpense(t)) {
-            // 지출 분석과 동일하게 '고정비 포함' 체크된 정기 이체·저축도 총 지출에 합산
             totalOut += amt;
-        } else {
-            totalTransfer += amt;
+        }
+        if (b === 'voucher') {
+            totalVoucher += amt;
         }
     });
+
     document.getElementById('sumIncome').textContent = `+${totalIn.toLocaleString()}원`;
     document.getElementById('sumExpense').textContent = `-${totalOut.toLocaleString()}원`;
     const bal = totalIn - totalOut, balEl = document.getElementById('sumBalance');
     balEl.textContent = `${bal >= 0 ? '+' : ''}${bal.toLocaleString()}원`;
     balEl.className = `text-lg sm:text-xl font-bold mt-0.5 ${bal >= 0 ? 'text-gray-800' : 'text-rose-600'}`;
-    document.getElementById('sumTransferInfo').textContent = `이체·충전 ${totalTransfer.toLocaleString()}원`;
+    document.getElementById('sumTransferInfo').textContent = `상품권충전 ${totalVoucher.toLocaleString()}원`;
     document.getElementById('calendarTitle').textContent = `${viewYear}년 ${viewMonth}월`;
     document.getElementById('calendarRangeLabel').textContent = Number(db.config.startDayOfMonth) > 1 ? `${period.start} ~ ${period.end}` : '';
-    renderCalendarView(period, txs);
-    renderListView();
+    renderCalendarView(period, entries);
+    renderListView(entries);
 }
 
 function changeViewMonth(delta) {
@@ -1068,7 +1124,7 @@ function renderSpecialBadgesHtml(dateStr) {
     return html;
 }
 
-function renderCalendarView(period, periodTxs) {
+function renderCalendarView(period, periodEntries) {
     const startDow = Number(db.config.startDayOfWeek) || 0;
     const daysSun = [
         { label: '일', cls: 'text-rose-500' }, { label: '월', cls: '' }, { label: '화', cls: '' },
@@ -1086,12 +1142,13 @@ function renderCalendarView(period, periodTxs) {
     });
 
     const dayMap = {};
-    periodTxs.forEach(t => {
-        if (!dayMap[t.date]) dayMap[t.date] = { in: 0, out: 0, tr: 0 };
-        const amt = Number(t.amount) || 0, b = getTypeBehavior(t.type);
-        if (b === 'income') dayMap[t.date].in += amt;
-        else if (b === 'expense') dayMap[t.date].out += amt;
-        else dayMap[t.date].tr += amt;
+    periodEntries.forEach(t => {
+        const dKey = t.displayDate;
+        if (!dayMap[dKey]) dayMap[dKey] = { in: 0, out: 0, tr: 0 };
+        const amt = Number(t.displayAmount) || 0, b = getTypeBehavior(t.type);
+        if (b === 'income') dayMap[dKey].in += amt;
+        else if (b === 'expense') dayMap[dKey].out += amt;
+        else dayMap[dKey].tr += amt;
     });
 
     const grid = document.getElementById('calendarGrid');
@@ -1144,29 +1201,34 @@ function selectCalendarDate(dateStr) {
 function renderSelectedDayPanel(dayDues = []) {
     document.getElementById('selectedDayTitle').textContent = `${selectedDateStr} 상세 내역`;
     document.getElementById('selectedDayBadges').innerHTML = renderSpecialBadgesHtml(selectedDateStr);
-    const dayTxs = db.transactions.filter(t => matchesGlobalUser(t.user) && t.date === selectedDateStr);
+    const dayEntries = getExpandedTxEntriesForRange(selectedDateStr, selectedDateStr);
     const [sy, sm] = selectedDateStr.split('-').map(Number);
 
     document.getElementById('selectedDayCount').textContent = dayDues.length > 0
-        ? `내역 ${dayTxs.length}건 · 납부예정 ${dayDues.length}건`
-        : `총 ${dayTxs.length}건`;
+        ? `내역 ${dayEntries.length}건 · 납부예정 ${dayDues.length}건`
+        : `총 ${dayEntries.length}건`;
 
     const listEl = document.getElementById('selectedDayList');
-    if (dayTxs.length === 0 && dayDues.length === 0) {
+    if (dayEntries.length === 0 && dayDues.length === 0) {
         listEl.innerHTML = `<div class="text-xs text-gray-400 py-3 text-center bg-white rounded-xl border border-amber-100">이 날짜에 등록된 내역이 없습니다.</div>`;
         return;
     }
 
     const dueHtml = renderPendingDueCardsHtml(dayDues, sy, sm);
-    const txHtml = dayTxs.map(t => {
+    const txHtml = dayEntries.map(t => {
         const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
         const isIncTransfer = isTr && isTxIncludedInExpense(t);
         const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
         const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
-        const instBadge = (Number(t.installmentMonths) > 1) ? `<span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">${t.installmentMonths}개월 할부</span>` : '';
+        const instBadge = t.isInstallmentSlice
+            ? `<span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">${t.instIndex}/${t.instMonths}회차</span>`
+            : '';
         const autoBadge = t.fromAutoTransfer ? `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-[10px]">정기</span>` : '';
         const incBadge = isIncTransfer ? `<span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold text-[10px]">고정비 포함</span>` : '';
         const methodDisplay = isTr ? `${getAssetLabel(t.method)} → ${getAssetLabel(t.targetAsset)}` : getAssetLabel(t.method);
+        const instSub = t.isInstallmentSlice
+            ? ` · 총 ${t.totalAmount.toLocaleString()}원${t.instIndex > 1 ? ` (원결제 ${t.originalDate})` : ''}`
+            : '';
         return `
             <div class="bg-white p-3 rounded-xl border border-amber-100 flex flex-wrap justify-between items-center gap-2 text-xs">
                 <div class="space-y-0.5">
@@ -1175,10 +1237,10 @@ function renderSelectedDayPanel(dayDues = []) {
                         <span class="font-bold text-amber-900">${escHtml(t.catMain)}${t.catSub ? ' · ' + escHtml(t.catSub) : ''}</span>
                         ${autoBadge}${incBadge}${instBadge}<span class="text-gray-800">${escHtml(t.memo)}</span>
                     </div>
-                    <div class="text-[11px] text-gray-400">${escHtml(t.type)} | ${escHtml(methodDisplay)}</div>
+                    <div class="text-[11px] text-gray-400">${escHtml(t.type)} | ${escHtml(methodDisplay)}${instSub}</div>
                 </div>
                 <div class="flex items-center gap-2 ml-auto">
-                    <span class="font-bold text-sm ${amtColor}">${sign}${Number(t.amount).toLocaleString()}원</span>
+                    <span class="font-bold text-sm ${amtColor}">${sign}${Number(t.displayAmount).toLocaleString()}원</span>
                     <button onclick="startEditTx('${t.id}')" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-[11px]">수정</button>
                     <button onclick="deleteTx('${t.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-[11px]">삭제</button>
                 </div>
@@ -1187,58 +1249,121 @@ function renderSelectedDayPanel(dayDues = []) {
     listEl.innerHTML = dueHtml + txHtml;
 }
 
-function renderListView() {
+function renderListView(passedEntries) {
     const typeFilter = document.getElementById('listTypeFilter').value;
     const keyword = document.getElementById('listSearchInput').value.trim().toLowerCase();
-    let txs = getFilteredPeriodTransactions();
-    if (typeFilter !== '전체') txs = txs.filter(t => t.type === typeFilter);
+    let entries = passedEntries ? [...passedEntries] : getFilteredPeriodEntries();
+    if (typeFilter !== '전체') entries = entries.filter(t => t.type === typeFilter);
     if (keyword) {
-        txs = txs.filter(t => [t.memo, t.catMain, t.catSub, getAssetLabel(t.method), getAssetLabel(t.targetAsset)].some(v => (v || '').toLowerCase().includes(keyword)));
+        entries = entries.filter(t => [t.memo, t.catMain, t.catSub, getAssetLabel(t.method), getAssetLabel(t.targetAsset)].some(v => (v || '').toLowerCase().includes(keyword)));
     }
-    txs.sort((a, b) => b.date.localeCompare(a.date));
+    entries.sort((a, b) => b.displayDate.localeCompare(a.displayDate) || compareKorean(a.memo, b.memo));
 
     const tbody = document.getElementById('transactionListTable');
-    if (txs.length === 0) { tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-gray-400">조건에 맞는 내역이 없습니다.</td></tr>`; return; }
-    tbody.innerHTML = txs.map(t => {
-        const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
-        const isIncTransfer = isTr && isTxIncludedInExpense(t);
-        const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
-        const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
-        const instBadge = (Number(t.installmentMonths) > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold mr-1 whitespace-nowrap">${t.installmentMonths}개월</span>` : '';
-        const autoBadge = t.fromAutoTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold mr-1 whitespace-nowrap">정기</span>` : '';
-        const incBadge = isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold mr-1 whitespace-nowrap">고정비</span>` : '';
-        const shortDate = t.date ? t.date.slice(2).replace(/-/g, '.') : '';
+    const cardList = document.getElementById('transactionCardList');
 
-        const catHtml = `
-            <div class="flex items-center gap-1 whitespace-nowrap">
-                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">${escHtml(t.type)}</span>
-                <span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>
-            </div>
-            ${t.catSub ? `<div class="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">${escHtml(t.catSub)}</div>` : ''}`;
+    if (entries.length === 0) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-gray-400">조건에 맞는 내역이 없습니다.</td></tr>`;
+        if (cardList) cardList.innerHTML = `<div class="bg-gray-50 p-8 rounded-2xl border border-gray-200 text-center text-xs text-gray-400">조건에 맞는 내역이 없습니다.</div>`;
+        return;
+    }
 
-        const methodHtml = isTr
-            ? `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>
-               <div class="text-[10px] text-purple-600 whitespace-nowrap">→ ${escHtml(getAssetLabel(t.targetAsset))}</div>`
-            : `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>`;
+    // 1. PC 표 형태 렌더링
+    if (tbody) {
+        tbody.innerHTML = entries.map(t => {
+            const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
+            const isIncTransfer = isTr && isTxIncludedInExpense(t);
+            const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
+            const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
+            const instBadge = t.isInstallmentSlice
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold mr-1 whitespace-nowrap">${t.instIndex}/${t.instMonths}회차</span>`
+                : '';
+            const autoBadge = t.fromAutoTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold mr-1 whitespace-nowrap">정기</span>` : '';
+            const incBadge = isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold mr-1 whitespace-nowrap">고정비</span>` : '';
+            const shortDate = t.displayDate ? t.displayDate.slice(2).replace(/-/g, '.') : '';
 
-        return `
-            <tr class="hover:bg-amber-50/40 align-middle">
-                <td class="py-2.5 px-2 text-gray-500 whitespace-nowrap text-[11px]" title="${escHtml(t.date)}">${shortDate}</td>
-                <td class="py-2.5 px-2 font-bold text-gray-700 whitespace-nowrap">${escHtml(t.user)}</td>
-                <td class="py-2.5 px-2.5">${catHtml}</td>
-                <td class="py-2.5 px-2.5 text-gray-800 min-w-[160px] sm:min-w-[210px] leading-snug break-words">${autoBadge}${incBadge}${instBadge}${escHtml(t.memo)}</td>
-                <td class="py-2.5 px-2.5 text-[11px] leading-snug">${methodHtml}</td>
-                <td class="py-2.5 px-2.5 text-right font-bold whitespace-nowrap ${amtColor}">${sign}${Number(t.amount).toLocaleString()}원</td>
-                <td class="py-2.5 px-2 text-center whitespace-nowrap space-x-1">
-                    <button onclick="startEditTx('${t.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
-                    <button onclick="deleteTx('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
-                </td>
-            </tr>`;
-    }).join('');
+            const catHtml = `
+                <div class="flex items-center gap-1 whitespace-nowrap">
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">${escHtml(t.type)}</span>
+                    <span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>
+                </div>
+                ${t.catSub ? `<div class="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">${escHtml(t.catSub)}</div>` : ''}`;
+
+            const methodHtml = isTr
+                ? `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>
+                   <div class="text-[10px] text-purple-600 whitespace-nowrap">→ ${escHtml(getAssetLabel(t.targetAsset))}</div>`
+                : `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>`;
+
+            const instHint = t.isInstallmentSlice
+                ? `<div class="text-[10px] text-gray-400 mt-0.5">총 ${t.totalAmount.toLocaleString()}원${t.instIndex > 1 ? ` · 원결제 ${t.originalDate.slice(2).replace(/-/g, '.')}` : ''}</div>`
+                : '';
+
+            return `
+                <tr class="hover:bg-amber-50/40 align-middle">
+                    <td class="py-2.5 px-2.5 text-gray-500 whitespace-nowrap text-[11px]" title="${escHtml(t.displayDate)}">${shortDate}</td>
+                    <td class="py-2.5 px-2.5 font-bold text-gray-700 whitespace-nowrap">${escHtml(t.user)}</td>
+                    <td class="py-2.5 px-2.5">${catHtml}</td>
+                    <td class="py-2.5 px-2.5 text-gray-800 min-w-[160px] sm:min-w-[210px] leading-snug break-words">
+                        <div>${autoBadge}${incBadge}${instBadge}${escHtml(t.memo)}</div>
+                        ${instHint}
+                    </td>
+                    <td class="py-2.5 px-2.5 text-[11px] leading-snug">${methodHtml}</td>
+                    <td class="py-2.5 px-2.5 text-right font-bold whitespace-nowrap ${amtColor}">${sign}${Number(t.displayAmount).toLocaleString()}원</td>
+                    <td class="py-2.5 px-2.5 text-center whitespace-nowrap space-x-1">
+                        <button onclick="startEditTx('${t.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
+                        <button onclick="deleteTx('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
+                    </td>
+                </tr>`;
+        }).join('');
+    }
+
+    // 2. 모바일 카드형 리스트 렌더링
+    if (cardList) {
+        cardList.innerHTML = entries.map(t => {
+            const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
+            const isIncTransfer = isTr && isTxIncludedInExpense(t);
+            const amtColor = b === 'income' ? 'text-blue-600' : (b === 'expense' ? 'text-rose-500' : 'text-purple-600');
+            const sign = b === 'income' ? '+' : (b === 'expense' ? '-' : '');
+            const instBadge = t.isInstallmentSlice
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold whitespace-nowrap">${t.instIndex}/${t.instMonths}회차</span>`
+                : '';
+            const autoBadge = t.fromAutoTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold whitespace-nowrap">정기</span>` : '';
+            const incBadge = isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold whitespace-nowrap">고정비</span>` : '';
+            const shortDate = t.displayDate ? t.displayDate.slice(2).replace(/-/g, '.') : '';
+            const methodDisplay = isTr ? `${getAssetLabel(t.method)} → ${getAssetLabel(t.targetAsset)}` : getAssetLabel(t.method);
+            const instHint = t.isInstallmentSlice
+                ? `<div class="text-[10px] text-gray-400">총 ${t.totalAmount.toLocaleString()}원${t.instIndex > 1 ? ` · 원결제 ${t.originalDate.slice(2).replace(/-/g, '.')}` : ''}</div>`
+                : '';
+
+            return `
+                <div class="bg-white p-3 rounded-2xl border border-gray-200 space-y-1.5 text-xs">
+                    <div class="flex justify-between items-center gap-2">
+                        <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span class="text-[11px] font-bold text-gray-500 whitespace-nowrap">${shortDate}</span>
+                            ${getOwnerBadgeHtml(t.user)}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold whitespace-nowrap">${escHtml(t.type)}</span>
+                            <span class="font-bold text-amber-900 truncate">${escHtml(t.catMain)}${t.catSub ? '/' + escHtml(t.catSub) : ''}</span>
+                        </div>
+                        <span class="font-bold text-sm shrink-0 whitespace-nowrap ${amtColor}">${sign}${Number(t.displayAmount).toLocaleString()}원</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap text-sm font-bold text-gray-800 leading-snug break-words">
+                        ${autoBadge}${incBadge}${instBadge}<span>${escHtml(t.memo)}</span>
+                    </div>
+                    ${instHint}
+                    <div class="flex justify-between items-center gap-2 pt-1.5 border-t border-gray-100">
+                        <span class="text-[11px] text-gray-500 truncate">${escHtml(methodDisplay)}</span>
+                        <div class="flex gap-1.5 shrink-0">
+                            <button onclick="startEditTx('${t.id}')" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-[11px]">수정</button>
+                            <button onclick="deleteTx('${t.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-[11px]">삭제</button>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+    }
 }
 
 // =========================================================
-// [2. 결제·출금] 로직
+// [2. 결제·출금] 로직 (신용카드 전체 합계 · 결제 대금 정산 용어 통일)
 // =========================================================
 function getCardBillingPeriod(card, billY, billM) {
     const offsetMap = { '전전월': -2, '전월': -1, '당월': 0 };
@@ -1345,7 +1470,7 @@ function getCashflowEntriesForMonth(year, month, ignoreUserAndAccount = false) {
         if (accFilter !== '전체' && fromId !== accFilter) return;
         const amt = ev.type === 'settlement' ? Number(ev.actualAmount) : Number(ev.amount);
         if (amt <= 0) return;
-        const sub = ev.type === 'settlement' ? '카드대금 정산' : (ev.type === 'prepay_item' ? '건별 선결제' : '카드 선결제');
+        const sub = ev.type === 'settlement' ? '결제 대금 정산' : (ev.type === 'prepay_item' ? '건별 선결제' : '카드 선결제');
         entries.push({ id: 'CF_EV_' + ev.id, eventId: ev.id, date: ev.date, kind: 'out', accountId: fromId, account: getAssetLabel(fromId), title: ev.memo, sub, amount: amt, sourceType: 'cardEvent' });
     });
 
@@ -1403,6 +1528,7 @@ function toggleCfHideZeroCards(checked) {
 
 function renderCfCardBillingBoxes() {
     const grid = document.getElementById('cfCardBillingGrid');
+    const summaryEl = document.getElementById('cfCardTotalSummary');
     const chkEl = document.getElementById('cfHideZeroCardsChk');
     if (chkEl) chkEl.checked = cfHideZeroCards;
 
@@ -1412,6 +1538,44 @@ function renderCfCardBillingBoxes() {
         .sort((a, b) => (getOwnerRank(a.owner) - getOwnerRank(b.owner)) || compareKorean(a.name, b.name));
 
     const bills = allCards.map(c => computeCardBillForMonth(c, cfYear, cfMonth, false));
+
+    // 신용카드 전체 합계 계산
+    let totalRemaining = 0, totalSettled = 0, totalPrepaid = 0, totalGross = 0;
+    let pendingCardCount = 0, settledCardCount = 0;
+    bills.forEach(b => {
+        totalGross += b.grossAmount;
+        totalPrepaid += (b.itemPrepaidSum + b.amountPrepaidSum);
+        if (b.settlement) {
+            settledCardCount++;
+            totalSettled += (Number(b.settlement.actualAmount) || 0);
+        } else if (b.remainingAmount > 0) {
+            pendingCardCount++;
+            totalRemaining += b.remainingAmount;
+        }
+    });
+
+    if (summaryEl) {
+        if (allCards.length === 0) {
+            summaryEl.innerHTML = '';
+        } else {
+            const subParts = [];
+            if (settledCardCount > 0) subParts.push(`결제완료 ${totalSettled.toLocaleString()}원 (${settledCardCount}장)`);
+            if (totalPrepaid > 0) subParts.push(`선결제 ${totalPrepaid.toLocaleString()}원`);
+            const subText = subParts.length > 0 ? subParts.join(' · ') : `총 청구원금 ${totalGross.toLocaleString()}원`;
+            summaryEl.innerHTML = `
+                <div class="bg-white p-3.5 rounded-2xl border-2 border-pink-300 shadow-sm space-y-1">
+                    <div class="flex justify-between items-baseline gap-2">
+                        <span class="text-xs font-bold text-pink-900">남은 결제 예정 합계 <span class="text-[10px] font-normal text-gray-500">(${pendingCardCount}장)</span></span>
+                        <span class="text-lg font-bold text-rose-600 whitespace-nowrap">${totalRemaining.toLocaleString()}원</span>
+                    </div>
+                    <div class="text-[11px] text-gray-500 flex justify-between items-center gap-2">
+                        <span class="truncate">${subText}</span>
+                        ${settledCardCount > 0 ? `<span class="text-gray-400 shrink-0 whitespace-nowrap">총 ${totalGross.toLocaleString()}원</span>` : ''}
+                    </div>
+                </div>`;
+        }
+    }
+
     const visibleBills = cfHideZeroCards
         ? bills.filter(b => b.grossAmount > 0 || b.remainingAmount > 0 || !!b.settlement)
         : bills;
@@ -1506,7 +1670,7 @@ function openCardDetailModal(cardId) {
                 <div>총 청구원금 <b>${bill.grossAmount.toLocaleString()}원</b></div>
                 ${pre > 0 ? `<div class="text-orange-600 font-bold">선결제 -${pre.toLocaleString()}원</div>` : ''}
                 ${Number(card.revolving) > 0 ? `<div class="text-rose-600 font-bold">리볼빙 ${Number(card.revolving).toLocaleString()}원</div>` : ''}
-                ${bill.settlement ? `<div class="text-green-700 font-bold">정산 완료 (${Number(bill.settlement.actualAmount).toLocaleString()}원)</div>` : ''}
+                ${bill.settlement ? `<div class="text-green-700 font-bold">대금 정산 완료 (${Number(bill.settlement.actualAmount).toLocaleString()}원)</div>` : ''}
             </div>
         </div>
 
@@ -1520,9 +1684,9 @@ function openCardDetailModal(cardId) {
 
         <div class="flex gap-2 pt-2 border-t border-gray-100">
             ${bill.settlement
-                ? `<button onclick="cancelCardEvent('${bill.settlement.id}'); closeCustomModal();" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">결제 정산 취소</button>`
+                ? `<button onclick="cancelCardEvent('${bill.settlement.id}'); closeCustomModal();" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">대금 정산 취소</button>`
                 : `<button onclick="openAmountPrepayModal('${card.id}')" class="flex-1 py-2.5 btn-orange rounded-xl text-xs shadow-sm">금액 선결제</button>
-                   <button onclick="openCardSettleModal('${card.id}')" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제 완료 정산</button>`
+                   <button onclick="openCardSettleModal('${card.id}')" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제 대금 정산</button>`
             }
         </div>`);
 }
@@ -1612,7 +1776,7 @@ function openCardSettleModal(cardId) {
     if (!card) return;
     const bill = computeCardBillForMonth(card, cfYear, cfMonth, false);
     openCustomModal(`
-        <h3 class="title-font text-lg text-pink-900">${escHtml(getAssetLabel(card.id))} ${cfMonth}월 결제 정산</h3>
+        <h3 class="title-font text-lg text-pink-900">${escHtml(getAssetLabel(card.id))} ${cfMonth}월 결제 대금 정산</h3>
         <div class="bg-pink-50/60 p-3 rounded-xl border border-pink-100 text-xs flex justify-between items-center"><span class="text-gray-600">청구 예정 원금</span><span class="font-bold text-base text-pink-800">${bill.remainingAmount.toLocaleString()}원</span></div>
         <div class="space-y-3 text-xs">
             <div class="grid grid-cols-2 gap-2">
@@ -1638,7 +1802,7 @@ function openCardSettleModal(cardId) {
         </div>
         <div class="flex justify-end gap-2 pt-2">
             <button onclick="openCardDetailModal('${cardId}')" class="px-4 py-2 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs">뒤로</button>
-            <button onclick="confirmCardSettle('${cardId}', ${bill.remainingAmount})" class="px-4 py-2 btn-pink rounded-xl text-xs shadow-sm">결제 완료 확정</button>
+            <button onclick="confirmCardSettle('${cardId}', ${bill.remainingAmount})" class="px-4 py-2 btn-pink rounded-xl text-xs shadow-sm">결제 대금 정산 확정</button>
         </div>`);
 }
 
@@ -2131,7 +2295,6 @@ function renderAssets() {
     const checkingBanks = banks.filter(b => b.type !== '선불·상품권' && b.type !== '실물자산' && b.type !== '투자');
     const minusAccounts = debts.filter(d => d.type === '마이너스통장');
 
-    // 신용·체크카드 출금 계좌에는 일반 통장과 마이너스통장 모두 연결 가능
     const cardLinkedList = sortAssetsByOwnerTypeName([...checkingBanks, ...minusAccounts]);
     const cardLinkedOpts = cardLinkedList.map(b => `<option value="${escHtml(b.id)}">${escHtml(getAssetOptionText(b))}</option>`).join('') || '<option value="">통장 등록 필요</option>';
     const debtLinkedOpts = cardLinkedList.map(b => `<option value="${escHtml(b.id)}">${escHtml(getAssetOptionText(b))}</option>`).join('') || '<option value="">통장 등록 필요</option>';
@@ -2149,7 +2312,7 @@ function renderAssets() {
     toggleCardPerfFields();
     toggleDebtSignField();
 
-    // 1. 통장·투자·실물 (사용자별 묶음 아코디언 -> 내부 종류별·자산명순)
+    // 1. 통장·투자·실물 (사용자별 묶음 아코디언)
     const bankWrap = document.getElementById('bankGroupedList');
     if (bankWrap) {
         const groups = groupAssetsByOwner(banks);
@@ -2223,7 +2386,7 @@ function renderAssets() {
         }
     }
 
-    // 2. 신용·체크카드 (사용자별 묶음 아코디언 -> 내부 종류별·카드명순)
+    // 2. 신용·체크카드 (사용자별 묶음 아코디언)
     const cardWrap = document.getElementById('cardGroupedList');
     if (cardWrap) {
         const groups = groupAssetsByOwner(cards);
@@ -2322,7 +2485,7 @@ function renderAssets() {
         }
     }
 
-    // 3. 대출·마이너스통장 (사용자별 묶음 아코디언 -> 내부 종류별·부채명순)
+    // 3. 대출·마이너스통장 (사용자별 묶음 아코디언)
     const debtWrap = document.getElementById('debtGroupedList');
     if (debtWrap) {
         const groups = groupAssetsByOwner(debts);
@@ -2495,7 +2658,6 @@ function saveDebtAsset() {
     const name = document.getElementById('debtName').value.trim();
     const absBal = parseCommaNumber(document.getElementById('debtInitBalance').value);
     const sign = document.getElementById('debtBalanceSign')?.value || 'minus';
-    // 마이너스통장에서 '+ 예치'를 선택하면 내부적으로 음수(부채가 아닌 예치금)로 저장
     const initBalance = (type === '마이너스통장' && sign === 'plus' && absBal > 0) ? -absBal : absBal;
     const linkedAccount = document.getElementById('debtLinkedAccount').value;
     if (!name) return alert('부채 이름을 입력해 주세요.');

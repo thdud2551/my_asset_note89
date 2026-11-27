@@ -1,9 +1,9 @@
 // =========================================================
-// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 마통 자동전환 · 카드 미결제 상세 팝업)
+// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 · 마통 자동전환 · 카드 일시불/할부 분리 관리)
 // =========================================================
 let asset5TrendMode = '6m'; // '6m' | 'year'
 let asset5ExpandedBank = {}; // key: 'cash' | 'voucher' | 'saving' | 'invest' | 'real'
-let asset5ExpandedDebt = {}; // key: 'loan' | 'card'
+let asset5ExpandedDebt = {}; // key: 'loan' | 'card' | 'installment'
 
 const ASSET_GROUP_META = {
     cash:    { label: '입출금·현금', short: '입출금·현금', color: '#74C0FC', types: ['입출금통장', '현금', '마이너스통장'] },
@@ -38,6 +38,100 @@ function getAssetFirstRecordYM(curYM) {
     return minYM;
 }
 
+// 특정 시점 기준 진행 중인 신용카드 할부 내역 및 회차별 상태 계산
+function computeActiveInstallmentsAsOf(asOfDate, isLiveSnapshot) {
+    const events = (db.cardEvents || []).filter(ev => {
+        if (!ev.date) return false;
+        if (ev.date > asOfDate && !isLiveSnapshot) return false;
+        return true;
+    });
+
+    const items = [];
+    const cardRemainMap = {};
+
+    (db.transactions || []).forEach(t => {
+        if (!t.date || t.date > asOfDate) return;
+        if (getTypeBehavior(t.type) !== 'expense') return;
+        const months = Number(t.installmentMonths) || 1;
+        if (months <= 1) return;
+
+        const card = findAsset(t.method);
+        if (!card || card.group !== 'card' || card.type !== '신용카드') return;
+
+        const totalAmt = Number(t.amount) || 0;
+        if (totalAmt <= 0) return;
+
+        const firstBill = findFirstBillingYMForTx(card, t.date);
+        const base = Math.floor(totalAmt / months);
+        const rem = totalAmt - (base * months);
+
+        const schedule = [];
+        let paidCount = 0;
+        let remainCount = 0;
+        let remainAmount = 0;
+        let nextBillYM = '';
+        let lastBillYM = '';
+
+        for (let idx = 1; idx <= months; idx++) {
+            const bm = addMonthToYM(firstBill.y, firstBill.m, idx - 1);
+            const ym = formatYM(bm.y, bm.m);
+            const instAmt = (idx === 1) ? (base + rem) : base;
+
+            const prepaidEv = events.find(e =>
+                e.type === 'prepay_item' &&
+                e.txId === t.id &&
+                (e.installmentIndex === idx || (Array.isArray(e.prepaidIndices) && e.prepaidIndices.includes(idx)))
+            );
+            const settledEv = events.find(e =>
+                e.type === 'settlement' &&
+                isCardEventMatch(e, card) &&
+                e.billingYM === ym
+            );
+
+            let status = 'pending';
+            if (prepaidEv) status = 'prepaid';
+            else if (settledEv) status = 'settled';
+
+            if (status === 'pending') {
+                remainCount++;
+                remainAmount += instAmt;
+                if (!nextBillYM) nextBillYM = ym;
+            } else {
+                paidCount++;
+            }
+            lastBillYM = ym;
+            schedule.push({ idx, ym, amount: instAmt, status });
+        }
+
+        if (remainCount > 0 && remainAmount > 0) {
+            cardRemainMap[card.id] = (cardRemainMap[card.id] || 0) + remainAmount;
+            const nextPending = schedule.find(s => s.status === 'pending');
+            items.push({
+                tx: t,
+                card,
+                months,
+                totalAmount: totalAmt,
+                monthlyAmount: nextPending ? nextPending.amount : base,
+                paidCount,
+                remainCount,
+                remainAmount,
+                nextBillYM,
+                lastBillYM,
+                schedule
+            });
+        }
+    });
+
+    items.sort((a, b) =>
+        (getOwnerRank(a.card.owner) - getOwnerRank(b.card.owner)) ||
+        a.lastBillYM.localeCompare(b.lastBillYM) ||
+        compareKorean(a.card.name, b.card.name) ||
+        compareKorean(a.tx.memo, b.tx.memo)
+    );
+
+    return { items, cardRemainMap };
+}
+
 function computeAssetSnapshotAsOf(asOfDate) {
     const todayStr = formatYMD(new Date());
     const isLiveSnapshot = (asOfDate >= todayStr);
@@ -50,7 +144,6 @@ function computeAssetSnapshotAsOf(asOfDate) {
         if (a.group === 'bank') {
             bankCostMap[a.id] = Number(a.initBalance) || 0;
         } else if (a.group === 'debt') {
-            // 마이너스통장: initBalance > 0 이면 부채(-잔고), < 0 이면 예치금(+잔고)
             debtBalMap[a.id] = Number(a.initBalance) || 0;
         } else if (a.group === 'card' && a.type === '신용카드') {
             cardUnpaidMap[a.id] = Number(a.revolving) || 0;
@@ -70,7 +163,6 @@ function computeAssetSnapshotAsOf(asOfDate) {
             bankCostMap[a.id] = (bankCostMap[a.id] || 0) + delta;
         } else if (a.group === 'debt') {
             if (a.type === '마이너스통장') {
-                // 마이너스통장은 0원을 넘어 플러스(+) 예치금 영역까지 그대로 반영
                 debtBalMap[a.id] = (debtBalMap[a.id] || 0) - delta;
             } else {
                 debtBalMap[a.id] = Math.max(0, (debtBalMap[a.id] || 0) - delta);
@@ -106,7 +198,6 @@ function computeAssetSnapshotAsOf(asOfDate) {
     (db.cardEvents || []).forEach(ev => {
         if (!ev.date) return;
         const isFutureEvent = ev.date > asOfDate;
-        // 과거 월말 스냅샷은 해당 시점 이전 이벤트만 반영, 현재(실시간) 스냅샷은 미리 정산·선결제한 카드값을 즉시 차감
         if (isFutureEvent && !isLiveSnapshot) return;
 
         const fromId = resolveToAssetId(ev.fromAccount);
@@ -133,6 +224,8 @@ function computeAssetSnapshotAsOf(asOfDate) {
             }
         }
     });
+
+    const instSummary = computeActiveInstallmentsAsOf(asOfDate, isLiveSnapshot);
 
     const sortByOwnerTypeName = (x, y) =>
         (getOwnerRank(x.asset.owner) - getOwnerRank(y.asset.owner)) ||
@@ -167,7 +260,6 @@ function computeAssetSnapshotAsOf(asOfDate) {
         } else if (a.group === 'debt') {
             const bal = debtBalMap[a.id] || 0;
             if (a.type === '마이너스통장' && bal < 0) {
-                // 마이너스통장 잔액이 플러스(+) 상태 -> 보유 자산(입출금·현금)으로 자동 분류
                 const surplusVal = -bal;
                 totalAssets += surplusVal;
                 groupTotals.cash += surplusVal;
@@ -185,11 +277,15 @@ function computeAssetSnapshotAsOf(asOfDate) {
                 debtItems.push({ asset: a, balance: debtVal });
             }
         } else if (a.group === 'card' && a.type === '신용카드') {
-            const unpaid = Math.max(0, cardUnpaidMap[a.id] || 0);
-            totalDebts += unpaid;
-            cardDebtItems.push({ asset: a, unpaid });
+            const totalUnpaid = Math.max(0, cardUnpaidMap[a.id] || 0);
+            const instRemain = instSummary.cardRemainMap[a.id] || 0;
+            const lumpSumUnpaid = Math.max(0, totalUnpaid - instRemain);
+            totalDebts += totalUnpaid;
+            cardDebtItems.push({ asset: a, unpaid: totalUnpaid, lumpSumUnpaid, instRemain });
         }
     });
+
+    const installmentItems = instSummary.items.filter(it => matchesGlobalUser(it.card.owner));
 
     bankItems.sort(sortByOwnerTypeName);
     debtItems.sort(sortByOwnerTypeName);
@@ -202,7 +298,8 @@ function computeAssetSnapshotAsOf(asOfDate) {
         groupTotals,
         bankItems,
         debtItems,
-        cardDebtItems
+        cardDebtItems,
+        installmentItems
     };
 }
 
@@ -232,6 +329,7 @@ function toggleAllAsset5DebtGroups() {
     const presentKeys = [];
     if (snap.debtItems.length > 0) presentKeys.push('loan');
     if (snap.cardDebtItems.length > 0) presentKeys.push('card');
+    if (snap.installmentItems.length > 0) presentKeys.push('installment');
     const allOpen = presentKeys.length > 0 && presentKeys.every(k => !!asset5ExpandedDebt[k]);
     presentKeys.forEach(k => { asset5ExpandedDebt[k] = !allOpen; });
     renderTab5();
@@ -274,7 +372,7 @@ function renderTab5() {
     }
 
     renderAsset5BankList(snap.bankItems);
-    renderAsset5DebtList(snap.debtItems, snap.cardDebtItems);
+    renderAsset5DebtList(snap.debtItems, snap.cardDebtItems, snap.installmentItems);
     renderAsset5DonutChart(snap.groupTotals, snap.totalAssets);
     renderAsset5TrendChart();
 }
@@ -357,15 +455,16 @@ function renderAsset5BankList(bankItems) {
     }).join('');
 }
 
-function renderAsset5DebtList(debtItems, cardDebtItems) {
+function renderAsset5DebtList(debtItems, cardDebtItems, installmentItems = []) {
     const container = document.getElementById('asset5DebtSections');
     const toggleBtn = document.getElementById('asset5DebtToggleAllBtn');
     if (!container) return;
 
     const loanTotal = debtItems.reduce((s, x) => s + x.balance, 0);
-    const cardTotal = cardDebtItems.reduce((s, x) => s + x.unpaid, 0);
+    const lumpSumTotal = cardDebtItems.reduce((s, x) => s + x.lumpSumUnpaid, 0);
+    const instTotal = installmentItems.reduce((s, x) => s + x.remainAmount, 0);
 
-    if (debtItems.length === 0 && cardDebtItems.length === 0) {
+    if (debtItems.length === 0 && cardDebtItems.length === 0 && installmentItems.length === 0) {
         if (toggleBtn) toggleBtn.classList.add('hidden');
         container.innerHTML = `<div class="bg-white p-8 rounded-2xl border border-pink-100 text-center text-xs text-gray-400">등록된 부채나 신용카드가 없습니다.</div>`;
         return;
@@ -374,6 +473,8 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
     const presentKeys = [];
     if (debtItems.length > 0) presentKeys.push('loan');
     if (cardDebtItems.length > 0) presentKeys.push('card');
+    if (installmentItems.length > 0) presentKeys.push('installment');
+
     if (toggleBtn) {
         toggleBtn.classList.remove('hidden');
         const allOpen = presentKeys.every(k => !!asset5ExpandedDebt[k]);
@@ -381,6 +482,8 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
     }
 
     let html = '';
+
+    // 1. 대출 · 마이너스통장
     if (debtItems.length > 0) {
         const isOpen = !!asset5ExpandedDebt.loan;
         const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${debtItems.map(({ asset, balance }) => {
@@ -416,17 +519,21 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
             </div>`;
     }
 
+    // 2. 신용카드 일시불 미결제
     if (cardDebtItems.length > 0) {
         const isOpen = !!asset5ExpandedDebt.card;
-        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${cardDebtItems.map(({ asset, unpaid }) => `
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${cardDebtItems.map(({ asset, lumpSumUnpaid, instRemain }) => `
             <div onclick="openCardUnpaidDetailModal('${asset.id}')" class="bg-pink-50/30 hover:border-pink-300 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs cursor-pointer transition">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                    ${getOwnerBadgeHtml(asset.owner)}
-                    <span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">신용카드</span>
-                    <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
+                <div class="space-y-0.5 min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        ${getOwnerBadgeHtml(asset.owner)}
+                        <span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">신용카드</span>
+                        <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
+                    </div>
+                    ${instRemain > 0 ? `<div class="text-[10px] text-purple-600 font-bold">별도 진행 할부 잔액 ${instRemain.toLocaleString()}원</div>` : ''}
                 </div>
                 <div class="flex items-center gap-1.5 ml-auto">
-                    <span class="font-bold text-sm whitespace-nowrap ${unpaid > 0 ? 'text-rose-600' : 'text-gray-400'}">${unpaid.toLocaleString()}원</span>
+                    <span class="font-bold text-sm whitespace-nowrap ${lumpSumUnpaid > 0 ? 'text-rose-600' : 'text-gray-400'}">${lumpSumUnpaid.toLocaleString()}원</span>
                     <button onclick="event.stopPropagation(); openCardUnpaidDetailModal('${asset.id}')" class="px-2 py-1 bg-pink-100 hover:bg-pink-200 text-pink-900 rounded-lg text-[10px] font-bold whitespace-nowrap">상세</button>
                     <button onclick="event.stopPropagation(); switchMainTab('tab2')" class="px-2 py-1 bg-white border border-pink-200 hover:bg-pink-50 text-pink-700 rounded-lg text-[10px] font-bold whitespace-nowrap">결제·출금</button>
                 </div>
@@ -437,11 +544,11 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
                 <div onclick="toggleAsset5DebtGroup('card')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="w-3 h-3 rounded-full shrink-0 bg-pink-400"></span>
-                        <span class="font-bold text-sm text-pink-900 truncate">신용카드 미결제 금액</span>
+                        <span class="font-bold text-sm text-pink-900 truncate">신용카드 일시불 미결제</span>
                         <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-50 text-pink-700 font-bold shrink-0">${cardDebtItems.length}건</span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${cardTotal.toLocaleString()}원</span>
+                        <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${lumpSumTotal.toLocaleString()}원</span>
                         <span class="text-[11px] text-pink-500 font-bold">${isOpen ? '▲' : '▼'}</span>
                     </div>
                 </div>
@@ -449,7 +556,131 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
             </div>`;
     }
 
+    // 3. 신용카드 할부 잔액 (건별 상세 관리)
+    if (installmentItems.length > 0) {
+        const isOpen = !!asset5ExpandedDebt.installment;
+        const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-purple-100 space-y-2">${installmentItems.map(it => {
+            const pct = Math.round((it.paidCount / it.months) * 100);
+            const [ly, lm] = it.lastBillYM.split('-');
+            return `
+            <div onclick="openInstallmentDetailModal('${it.tx.id}')" class="bg-purple-50/40 hover:border-purple-300 p-3 rounded-xl border border-purple-200 space-y-2 text-xs cursor-pointer transition">
+                <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0 space-y-0.5">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            ${getOwnerBadgeHtml(it.card.owner)}
+                            <span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px] whitespace-nowrap">${escHtml(it.card.name)}</span>
+                            <span class="font-bold text-sm text-gray-800 truncate">${escHtml(it.tx.memo)}</span>
+                        </div>
+                        <div class="text-[11px] text-gray-500">
+                            총 ${it.totalAmount.toLocaleString()}원 (${it.months}개월) · 월 ${it.monthlyAmount.toLocaleString()}원
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="font-bold text-sm text-rose-600 whitespace-nowrap">${it.remainAmount.toLocaleString()}원</div>
+                        <div class="text-[10px] font-bold text-purple-700 whitespace-nowrap">남은 ${it.remainCount}회 / ${it.months}회</div>
+                    </div>
+                </div>
+                <div class="space-y-1">
+                    <div class="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full bg-purple-500 rounded-full transition-all" style="width:${pct}%"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[10px] text-gray-500">
+                        <span>결제일 ${it.tx.date} · ${it.paidCount}회 납부 완료 (${pct}%)</span>
+                        <span class="font-bold text-gray-600">완납 예정 ${ly}.${lm}</span>
+                    </div>
+                </div>
+            </div>`;
+        }).join('')}</div>` : '';
+
+        html += `
+            <div class="bg-white p-3.5 rounded-2xl border border-purple-200 shadow-sm">
+                <div onclick="toggleAsset5DebtGroup('installment')" class="flex justify-between items-center gap-2 cursor-pointer select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-3 h-3 rounded-full shrink-0 bg-purple-400"></span>
+                        <span class="font-bold text-sm text-purple-900 truncate">신용카드 할부 잔액</span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-bold shrink-0">${installmentItems.length}건</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="font-bold text-sm text-rose-600 whitespace-nowrap">${instTotal.toLocaleString()}원</span>
+                        <span class="text-[11px] text-purple-500 font-bold">${isOpen ? '▲' : '▼'}</span>
+                    </div>
+                </div>
+                ${rows}
+            </div>`;
+    }
+
     container.innerHTML = html;
+}
+
+// =========================================================
+// 할부 건별 회차 상세 스케줄 팝업
+// =========================================================
+function openInstallmentDetailModal(txId) {
+    const todayStr = formatYMD(new Date());
+    const snap = computeActiveInstallmentsAsOf(todayStr, true);
+    const it = snap.items.find(x => x.tx.id === txId);
+    if (!it) return;
+
+    const [ly, lm] = it.lastBillYM.split('-');
+    const rowsHtml = it.schedule.map(s => {
+        const [sy, sm] = s.ym.split('-').map(Number);
+        const badge = s.status === 'settled'
+            ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold">정산완료</span>`
+            : (s.status === 'prepaid'
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">선결제됨</span>`
+                : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold">청구예정</span>`);
+        const isDone = s.status !== 'pending';
+        return `
+            <div class="flex justify-between items-center p-2.5 rounded-xl border ${isDone ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-white border-purple-100'} text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-purple-900 w-12">${s.idx}/${it.months}회차</span>
+                    <span class="text-gray-600">${sy}년 ${sm}월 청구</span>
+                    ${badge}
+                </div>
+                <span class="font-bold ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}">${s.amount.toLocaleString()}원</span>
+            </div>`;
+    }).join('');
+
+    openCustomModal(`
+        <div class="flex justify-between items-start gap-2 border-b border-purple-100 pb-3">
+            <div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    ${getOwnerBadgeHtml(it.card.owner)}
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold">${escHtml(it.card.name)}</span>
+                    <h3 class="title-font text-xl text-purple-900">${escHtml(it.tx.memo)}</h3>
+                </div>
+                <div class="text-[11px] text-gray-500 mt-0.5">결제일 ${it.tx.date} · ${escHtml(it.tx.catMain)}${it.tx.catSub ? '/' + escHtml(it.tx.catSub) : ''} · 완납 예정 ${ly}년 ${Number(lm)}월</div>
+            </div>
+            <button onclick="closeCustomModal()" class="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-600">닫기</button>
+        </div>
+
+        <div class="bg-purple-50 p-3.5 rounded-2xl border border-purple-200 grid grid-cols-3 gap-2 text-center text-xs">
+            <div>
+                <div class="text-[10px] text-gray-500">총 결제금액</div>
+                <div class="font-bold text-gray-800 mt-0.5">${it.totalAmount.toLocaleString()}원</div>
+            </div>
+            <div>
+                <div class="text-[10px] text-gray-500">남은 회차</div>
+                <div class="font-bold text-purple-700 mt-0.5">${it.remainCount}회 / ${it.months}회</div>
+            </div>
+            <div>
+                <div class="text-[10px] text-gray-500">남은 금액</div>
+                <div class="font-bold text-rose-600 mt-0.5">${it.remainAmount.toLocaleString()}원</div>
+            </div>
+        </div>
+
+        <div class="space-y-1.5">
+            <div class="flex justify-between items-center text-xs">
+                <span class="font-bold text-gray-700">회차별 청구 · 납부 현황</span>
+                <span class="text-[10px] text-gray-400">결제 대금 정산·선결제 시 자동 반영</span>
+            </div>
+            <div class="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">${rowsHtml}</div>
+        </div>
+
+        <div class="flex gap-2 pt-2 border-t border-gray-100">
+            <button onclick="closeCustomModal(); switchMainTab('tab2');" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제·출금에서 선결제/정산</button>
+            <button onclick="closeCustomModal()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">닫기</button>
+        </div>`);
 }
 
 // =========================================================
@@ -482,9 +713,12 @@ function openCardUnpaidDetailModal(cardId) {
     const totalPrepaid = prepays.reduce((s, ev) => s + (Number(ev.amount) || 0), 0);
     const finalUnpaid = Math.max(0, revolvingInit + totalUsedToToday - totalSettledCleared - totalPrepaid);
 
+    const instSummary = computeActiveInstallmentsAsOf(todayStr, true);
+    const instRemain = instSummary.cardRemainMap[card.id] || 0;
+    const lumpSumUnpaid = Math.max(0, finalUnpaid - instRemain);
+
     const earlySettlements = settlements.filter(ev => ev.date && ev.date > todayStr);
 
-    // 관련 청구월 전부 수집 (일시불 + 할부 회차 + 이벤트 청구월)
     const ymSet = new Set([curYM, formatYM(addMonthToYM(curY, curM, 1).y, addMonthToYM(curY, curM, 1).m)]);
     cardTxs.forEach(t => {
         if (!t.date) return;
@@ -537,7 +771,6 @@ function openCardUnpaidDetailModal(cardId) {
         }
     });
 
-    // 알림 배너 (미리 정산 / 정산 후 변경 차액 / 미래 날짜 지출)
     let noticesHtml = '';
     if (earlySettlements.length > 0) {
         const txt = earlySettlements.map(ev => `${ev.billingYM}분(${ev.date} 결제 예정, ${Number(ev.expectedAmount).toLocaleString()}원)`).join(', ');
@@ -549,7 +782,7 @@ function openCardUnpaidDetailModal(cardId) {
     if (postSettleDiffs.length > 0) {
         noticesHtml += postSettleDiffs.map(d => `
             <div class="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-[11px] text-amber-900">
-                <b>정산 후 내역 변경 감지 (${d.y}년 ${d.m}월 청구분):</b> 정산 당시 원금(${d.settledExpected.toLocaleString()}원)과 현재 청구 원금(${d.curNetExpected.toLocaleString()}원)에 <b>${d.diff > 0 ? '+' : ''}${d.diff.toLocaleString()}원</b> 차이가 있습니다. [결제·출금]에서 정산 취소 후 다시 정산해 주세요.
+                <b>정산 후 내역 변경 감지 (${d.y}년 ${d.m}월 청구분):</b> 정산 당시 원금(${d.settledExpected.toLocaleString()}원)과 현재 청구 원금(${d.curNetExpected.toLocaleString()}원)에 <b>${d.diff > 0 ? '+' : ''}${d.diff.toLocaleString()}원</b> 차이가 있습니다. [결제·출금]에서 대금 정산 취소 후 다시 정산해 주세요.
             </div>`).join('');
     }
     if (futureTxs.length > 0) {
@@ -560,7 +793,6 @@ function openCardUnpaidDetailModal(cardId) {
             </div>`;
     }
 
-    // 청구월별 미결제 요약
     const monthsHtml = unsettledBills.length === 0
         ? `<div class="text-xs text-gray-400 py-4 text-center bg-gray-50 rounded-xl">미정산 청구 예정 내역이 없습니다.</div>`
         : `<div class="space-y-1.5">${unsettledBills.map(u => {
@@ -582,7 +814,6 @@ function openCardUnpaidDetailModal(cardId) {
                 </div>`;
         }).join('')}</div>`;
 
-    // 미결제 포함 세부 지출 리스트
     unsettledItemsToToday.sort((a, b) => a.billingYM.localeCompare(b.billingYM) || b.date.localeCompare(a.date));
     const itemsHtml = unsettledItemsToToday.length === 0
         ? `<div class="text-xs text-gray-400 py-4 text-center bg-gray-50 rounded-xl">표시할 미결제 지출 내역이 없습니다.</div>`
@@ -614,13 +845,17 @@ function openCardUnpaidDetailModal(cardId) {
 
         <div class="bg-pink-50 p-3.5 rounded-2xl border border-pink-200 space-y-2 text-xs">
             <div class="flex justify-between items-baseline">
-                <span class="font-bold text-pink-900">현재 미결제 총액</span>
+                <span class="font-bold text-pink-900">카드 전체 미결제 총액</span>
                 <span class="text-2xl font-bold text-rose-600">${finalUnpaid.toLocaleString()}원</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                <div class="bg-white p-2 rounded-xl border border-pink-100 flex justify-between"><span class="text-gray-500">일시불 미결제</span><span class="font-bold text-gray-800">${lumpSumUnpaid.toLocaleString()}원</span></div>
+                <div class="bg-white p-2 rounded-xl border border-purple-100 flex justify-between"><span class="text-purple-700">할부 잔액</span><span class="font-bold text-purple-800">${instRemain.toLocaleString()}원</span></div>
             </div>
             <div class="border-t border-pink-200 pt-2 space-y-1 text-[11px] text-gray-600">
                 <div class="flex justify-between"><span>오늘까지 누적 사용액 (${pastAndTodayTxs.length}건)</span><span class="font-bold text-gray-800">+${totalUsedToToday.toLocaleString()}원</span></div>
                 ${revolvingInit > 0 ? `<div class="flex justify-between"><span>초기·리볼빙 이월잔액</span><span class="font-bold text-rose-600">+${revolvingInit.toLocaleString()}원</span></div>` : ''}
-                ${totalSettledCleared > 0 ? `<div class="flex justify-between"><span>결제 완료 정산 차감 (${settlements.length}건)</span><span class="font-bold text-blue-600">-${totalSettledCleared.toLocaleString()}원</span></div>` : ''}
+                ${totalSettledCleared > 0 ? `<div class="flex justify-between"><span>결제 대금 정산 차감 (${settlements.length}건)</span><span class="font-bold text-blue-600">-${totalSettledCleared.toLocaleString()}원</span></div>` : ''}
                 ${totalPrepaid > 0 ? `<div class="flex justify-between"><span>선결제 차감 (${prepays.length}건)</span><span class="font-bold text-orange-600">-${totalPrepaid.toLocaleString()}원</span></div>` : ''}
             </div>
         </div>
@@ -641,7 +876,7 @@ function openCardUnpaidDetailModal(cardId) {
         </div>
 
         <div class="flex gap-2 pt-2 border-t border-gray-100">
-            <button onclick="closeCustomModal(); switchMainTab('tab2');" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제·출금 탭에서 정산 관리</button>
+            <button onclick="closeCustomModal(); switchMainTab('tab2');" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제·출금 탭에서 대금 정산</button>
             <button onclick="closeCustomModal()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">닫기</button>
         </div>`);
 }
@@ -775,7 +1010,6 @@ function openBalanceAdjustModal(assetId, currentVal) {
     const a = findAsset(assetId);
     if (!a) return;
 
-    // 마이너스통장 전용 (+ 예치 / - 부채 자동 전환 보정 모달)
     if (a.group === 'debt' && a.type === '마이너스통장') {
         const absVal = Math.abs(currentVal);
         const isNeg = currentVal < 0;
