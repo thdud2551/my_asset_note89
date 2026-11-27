@@ -1,11 +1,12 @@
 // =========================================================
-// [3. 정기 지출] 전용 모듈 (미반영/반영완료 분리 · PC/모바일 아코디언 · 4단계 정렬 · 할부 바로 변경)
+// [3. 정기 지출] 전용 모듈 (미반영/반영완료 · 사용자별 아코디언 · 할부 바로 변경 · 고정비 포함 이체)
 // =========================================================
 let atYear = todayObj.getFullYear();
 let atMonth = todayObj.getMonth() + 1;
 let atMasterFilter = 'active'; // 'all' | 'active' | 'paused' | 'ended'
 let atFormOpen = false;
 let atAppliedSectionOpen = false;
+let atMasterExpandedUsers = {};
 let atSelectedMonths = [];
 
 function getAtTypeRank(typeName) {
@@ -105,7 +106,7 @@ function getSpecificPendingAutoItemsForMonth(year, month) {
 function getMonthlyFixedExpenseHint() {
     const nowYM = formatYM(todayObj.getFullYear(), todayObj.getMonth() + 1);
     return (db.autoTransfers || [])
-        .filter(at => at.active !== false && at.cycleType !== 'specific' && getTypeBehavior(at.type) === 'expense')
+        .filter(at => at.active !== false && at.cycleType !== 'specific' && (getTypeBehavior(at.type) === 'expense' || !!at.includeInExpense))
         .filter(at => (!at.startYM || nowYM >= at.startYM) && (!at.endYM || nowYM <= at.endYM))
         .reduce((s, at) => {
             const exp = getExpectedAmountForAutoItem(at, todayObj.getFullYear(), todayObj.getMonth() + 1);
@@ -118,7 +119,7 @@ function getAnnualSpecificExpenseTotal(year) {
     let total = 0;
     (db.autoTransfers || []).forEach(at => {
         if (at.active === false || at.cycleType !== 'specific') return;
-        if (getTypeBehavior(at.type) !== 'expense') return;
+        if (getTypeBehavior(at.type) !== 'expense' && !at.includeInExpense) return;
         if (!matchesGlobalUser(at.user)) return;
         const months = Array.isArray(at.months) ? at.months : [];
         months.forEach(m => {
@@ -197,20 +198,29 @@ function renderTab4() {
         return { at, sched, applied, exp };
     }).sort((a, b) => compareAutoTransferItems(a.at, b.at));
 
-    let sumFixedExp = 0, sumTransfer = 0, doneCount = 0;
+    let sumFixedExp = 0, sumTransfer = 0, sumIncludedTransfer = 0, doneCount = 0;
     dueItems.forEach(({ at, applied, exp }) => {
         const b = getTypeBehavior(at.type);
         const amt = applied ? Number(applied.amount) : (exp.amount || 0);
-        if (b === 'expense') sumFixedExp += amt;
-        else if (b === 'transfer' || b === 'voucher') sumTransfer += amt;
+        if (b === 'expense') {
+            sumFixedExp += amt;
+        } else if (b === 'transfer' || b === 'voucher') {
+            sumTransfer += amt;
+            if (at.includeInExpense) {
+                sumFixedExp += amt;
+                sumIncludedTransfer += amt;
+            }
+        }
         if (applied) doneCount++;
     });
 
     const annualSpec = getAnnualSpecificExpenseTotal(atYear);
     document.getElementById('atSumExpense').textContent = `${sumFixedExp.toLocaleString()}원`;
-    document.getElementById('atSumAnnualHint').textContent = annualSpec > 0
-        ? `연간 세금·보험 ${annualSpec.toLocaleString()}원 (월 환산 ${Math.round(annualSpec / 12).toLocaleString()}원)`
-        : '등록된 연간 세금·보험 없음';
+    const hintParts = [];
+    if (sumIncludedTransfer > 0) hintParts.push(`고정비 포함 이체 ${sumIncludedTransfer.toLocaleString()}원 포함`);
+    if (annualSpec > 0) hintParts.push(`연간 세금·보험 ${annualSpec.toLocaleString()}원 (월 ${Math.round(annualSpec / 12).toLocaleString()}원)`);
+    document.getElementById('atSumAnnualHint').textContent = hintParts.length > 0 ? hintParts.join(' · ') : '등록된 연간 세금·보험 없음';
+
     document.getElementById('atSumTransfer').textContent = `${sumTransfer.toLocaleString()}원`;
     document.getElementById('atSumStatus').textContent = `${doneCount} / ${dueItems.length}건 완료`;
     document.getElementById('atSumStatusSub').textContent = dueItems.length > doneCount
@@ -243,10 +253,14 @@ function buildAtItemBadgesHtml(at, sched, applied, exp, ym) {
     const isEndingThisMonth = (at.endYM === ym);
     const isSpecific = (at.cycleType === 'specific');
     const appliedInst = applied ? (Number(applied.installmentMonths) || 1) : 1;
+    const b = getTypeBehavior(at.type);
+    const isIncTransfer = (b === 'transfer' || b === 'voucher') && !!at.includeInExpense;
+
     return [
         isSpecific
             ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">특정월</span>`
             : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">매월</span>`,
+        isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">고정비 포함</span>` : '',
         sched.shifted ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">영업일 보정</span>` : '',
         (!applied && exp.source === 'prevYear') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">전년 동월 기준</span>` : '',
         (!applied && exp.source === 'blank') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">변동 · 직접 입력</span>` : '',
@@ -285,7 +299,7 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
     let pendingHtml = '';
     if (pendingItems.length === 0) {
         pendingHtml = `
-            <div class="bg-green-50/70 p-5 rounded-2xl border border-green-200 text-center text-xs font-bold text-green-800">
+            <div class="bg-green-50 p-5 rounded-2xl border border-green-200 text-center text-xs font-bold text-green-800">
                 이번 달 예정된 정기 지출·이체를 모두 반영했습니다.
             </div>`;
     } else {
@@ -340,7 +354,7 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
             const badges = buildAtItemBadgesHtml(at, sched, applied, exp, ym);
 
             return `
-                <div class="bg-gray-50/90 p-3.5 rounded-2xl border border-gray-200 flex flex-wrap justify-between items-center gap-3 text-xs opacity-80 hover:opacity-100 transition">
+                <div class="at-applied-card bg-gray-50 p-3.5 rounded-2xl border border-gray-200 flex flex-wrap justify-between items-center gap-3 text-xs opacity-85 hover:opacity-100 transition">
                     <div class="space-y-1 min-w-[200px] flex-1">
                         <div class="flex items-center gap-1.5 flex-wrap">
                             <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[10px]">반영 완료</span>
@@ -360,12 +374,12 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
         }).join('');
 
         appliedHtml = `
-            <div class="pt-2 border-t border-orange-200/70">
-                <div onclick="toggleAtAppliedSection()" class="flex justify-between items-center gap-2 px-3.5 py-2.5 bg-white/80 hover:bg-white rounded-2xl border border-gray-200 cursor-pointer select-none transition">
+            <div class="pt-2 border-t border-orange-200">
+                <div onclick="toggleAtAppliedSection()" class="at-applied-header flex justify-between items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-gray-50 rounded-2xl border border-gray-200 cursor-pointer select-none transition">
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[11px] shrink-0">반영완료</span>
                         <span class="text-xs font-bold text-gray-700 whitespace-nowrap">${appliedItems.length}건</span>
-                        <span class="text-[11px] text-gray-400 truncate">합계 ${appliedSum.toLocaleString()}원</span>
+                        <span class="text-[11px] text-gray-500 truncate">합계 ${appliedSum.toLocaleString()}원</span>
                     </div>
                     <span id="atAppliedToggleIcon" class="text-[11px] font-bold text-gray-500 shrink-0 whitespace-nowrap">${atAppliedSectionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
                 </div>
@@ -403,6 +417,7 @@ function pushAutoTransferToTransactions(at, date, amount, ym, overrideInstMonths
         memo: at.name,
         amount,
         installmentMonths: instVal,
+        includeInExpense: isTr ? !!at.includeInExpense : false,
         fromAutoTransfer: true,
         autoTransferId: at.id,
         autoTransferYM: ym
@@ -467,7 +482,7 @@ function cancelAutoTransferApply(txId) {
 }
 
 // =========================================================
-// 정기 항목 등록 · 수정 · 관리 (PC·모바일 공통 접기/펼치기 연동)
+// 정기 항목 등록 · 수정 · 관리 (PC·모바일 아코디언 + 사용자별 그룹 접기/펼치기)
 // =========================================================
 function openAtFormFromHeader() {
     const secBody = document.getElementById('atMasterSectionBody');
@@ -606,6 +621,9 @@ function onAtTypeChange(keepSelection = false) {
     document.getElementById('atMethodSingleWrap').classList.toggle('hidden', isTr);
     document.getElementById('atMethodTransferWrap').classList.toggle('hidden', !isTr);
 
+    const incWrap = document.getElementById('atIncludeExpenseWrap');
+    if (incWrap) incWrap.classList.toggle('hidden', !isTr);
+
     const banksAll = db.assets.filter(a => a.group === 'bank' && a.type !== '실물자산');
     const banksNoV = banksAll.filter(a => a.type !== '선불·상품권');
     const vouchers = banksAll.filter(a => a.type === '선불·상품권');
@@ -685,6 +703,7 @@ function handleAtSubmit(e) {
     if (endYM && endYM < startYM) return alert('종료월은 시작월보다 같거나 이후여야 합니다.');
 
     const isTr = (behavior === 'transfer' || behavior === 'voucher');
+    const includeInExpense = isTr ? !!document.getElementById('atIncludeInExpense')?.checked : false;
     let method = '', targetAsset = '', installmentMonths = 1;
     if (isTr) {
         method = document.getElementById('atFromAccount').value;
@@ -703,6 +722,7 @@ function handleAtSubmit(e) {
     const payload = {
         id: editId || ('AT_' + Date.now()),
         name, user, type, catMain, catSub, method, targetAsset, installmentMonths,
+        includeInExpense,
         cycleType, months: cycleType === 'specific' ? [...atSelectedMonths] : [],
         dayOfMonth, shiftBusinessDay, amountType, amount, startYM, endYM,
         active: true
@@ -714,10 +734,17 @@ function handleAtSubmit(e) {
             payload.active = db.autoTransfers[idx].active !== false;
             db.autoTransfers[idx] = payload;
         }
+        // 이미 가계부에 반영된 이 항목의 거래내역에도 지출 분석 포함 여부를 즉시 동기화
+        db.transactions.forEach(t => {
+            if (t.autoTransferId === editId) {
+                t.includeInExpense = includeInExpense;
+            }
+        });
     } else {
         db.autoTransfers.push(payload);
     }
 
+    atMasterExpandedUsers[user] = true;
     resetAtForm();
     toggleAtForm(false);
     saveDb();
@@ -742,10 +769,13 @@ function startEditAt(id) {
     updateAtSubCategories(at.catSub);
 
     const b = getTypeBehavior(at.type);
+    const incChk = document.getElementById('atIncludeInExpense');
     if (b === 'transfer' || b === 'voucher') {
         document.getElementById('atFromAccount').value = resolveToAssetId(at.method);
         document.getElementById('atToAccount').value = resolveToAssetId(at.targetAsset);
+        if (incChk) incChk.checked = !!at.includeInExpense;
     } else {
+        if (incChk) incChk.checked = false;
         document.getElementById('atMethod').value = resolveToAssetId(at.method);
         onAtMethodChange();
         const months = Number(at.installmentMonths) || 1;
@@ -788,6 +818,8 @@ function resetAtForm() {
     document.getElementById('atStartYM').value = formatYM(atYear, atMonth);
     document.getElementById('atEndYM').value = '';
 
+    const incChk = document.getElementById('atIncludeInExpense');
+    if (incChk) incChk.checked = false;
     const instChk = document.getElementById('atIsInstallment');
     if (instChk) instChk.checked = false;
     toggleAtInstallmentMonths(false);
@@ -812,16 +844,9 @@ function deleteAt(id) {
     }
 }
 
-function renderAtMasterList() {
-    const tbody = document.getElementById('atMasterTableBody');
-    const cardList = document.getElementById('atMasterCardList');
-    if (!tbody && !cardList) return;
+function getFilteredAtMasterList() {
     const nowYM = formatYM(todayObj.getFullYear(), todayObj.getMonth() + 1);
-
     const allUserItems = (db.autoTransfers || []).filter(at => matchesGlobalUser(at.user));
-    const badgeEl = document.getElementById('atMasterTotalBadge');
-    if (badgeEl) badgeEl.textContent = `${allUserItems.length}건`;
-
     let list = allUserItems.filter(at => {
         const isEnded = !!(at.endYM && at.endYM < nowYM);
         const isPaused = (at.active === false);
@@ -830,101 +855,194 @@ function renderAtMasterList() {
         if (atMasterFilter === 'ended') return isEnded;
         return true;
     });
-
-    // 사용자 -> 구분 -> 분류(대분류·소분류) -> 항목 이름순
     list.sort(compareAutoTransferItems);
+    return { allUserItems, list, nowYM };
+}
 
-    if (list.length === 0) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-gray-400">해당 조건의 정기 항목이 없습니다.</td></tr>`;
-        if (cardList) cardList.innerHTML = `<div class="bg-gray-50 p-6 rounded-2xl border border-gray-100 text-center text-xs text-gray-400">해당 조건의 정기 항목이 없습니다.</div>`;
+function groupAutoItemsByOwner(sortedList) {
+    const map = {};
+    const order = [];
+    (db.users || []).forEach(u => { map[u] = []; order.push(u); });
+    sortedList.forEach(item => {
+        const own = item.user || '미지정';
+        if (!map[own]) { map[own] = []; order.push(own); }
+        map[own].push(item);
+    });
+    return order.filter(o => map[o].length > 0).map(o => ({ owner: o, items: map[o] }));
+}
+
+function toggleAtMasterUserGroup(owner) {
+    atMasterExpandedUsers[owner] = !atMasterExpandedUsers[owner];
+    renderAtMasterList();
+}
+
+function toggleAllAtMasterUserGroups() {
+    const { list } = getFilteredAtMasterList();
+    const groups = groupAutoItemsByOwner(list);
+    if (groups.length === 0) return;
+    const allOpen = groups.every(g => !!atMasterExpandedUsers[g.owner]);
+    groups.forEach(g => { atMasterExpandedUsers[g.owner] = !allOpen; });
+    renderAtMasterList();
+}
+
+function renderAtMasterList() {
+    const groupedWrap = document.getElementById('atMasterGroupedList');
+    const toggleAllBtn = document.getElementById('atMasterToggleAllBtn');
+    if (!groupedWrap) return;
+
+    const { allUserItems, list, nowYM } = getFilteredAtMasterList();
+    const badgeEl = document.getElementById('atMasterTotalBadge');
+    if (badgeEl) badgeEl.textContent = `${allUserItems.length}건`;
+
+    const groups = groupAutoItemsByOwner(list);
+    if (groups.length === 0) {
+        if (toggleAllBtn) toggleAllBtn.classList.add('hidden');
+        groupedWrap.innerHTML = `<div class="bg-gray-50 p-6 rounded-2xl border border-gray-200 text-center text-xs text-gray-400">해당 조건의 정기 항목이 없습니다.</div>`;
         return;
     }
 
-    if (tbody) {
-        tbody.innerHTML = list.map(at => {
-            const isEnded = !!(at.endYM && at.endYM < nowYM);
-            const isPaused = (at.active === false);
-            const b = getTypeBehavior(at.type);
-            const isTr = (b === 'transfer' || b === 'voucher');
-            const methodDisplay = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
-            const cycleLabel = at.cycleType === 'specific'
-                ? `${(at.months || []).map(m => m + '월').join(', ')} (${at.dayOfMonth}일)`
-                : `매월 ${at.dayOfMonth === 31 ? '말일' : at.dayOfMonth + '일'}`;
-            const statusBadge = isEnded
-                ? `<span class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-bold text-[10px]">종료됨</span>`
-                : (isPaused
-                    ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">일시중지</span>`
-                    : `<span class="px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold text-[10px]">사용 중</span>`);
-
-            return `
-                <tr class="hover:bg-orange-50/30 ${isPaused || isEnded ? 'opacity-60' : ''}">
-                    <td class="py-2.5 px-3 whitespace-nowrap">${statusBadge}</td>
-                    <td class="py-2.5 px-3">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                            ${getOwnerBadgeHtml(at.user)}
-                            <span class="font-bold text-gray-800">${escHtml(at.name)}</span>
-                            ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월</span>` : ''}
-                        </div>
-                        <div class="text-[10px] text-gray-400 mt-0.5">${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
-                    </td>
-                    <td class="py-2.5 px-3 text-gray-600 whitespace-nowrap">
-                        <div>${cycleLabel}</div>
-                        <div class="text-[10px] text-gray-400">${at.startYM || '-'} ~ ${at.endYM || '무기한'}${at.shiftBusinessDay ? ' · 영업일' : ''}</div>
-                    </td>
-                    <td class="py-2.5 px-3 text-gray-600 whitespace-nowrap">${escHtml(methodDisplay)}</td>
-                    <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap">
-                        ${at.amountType === 'variable' ? `<span class="text-purple-700">변동 (전년동월)</span>` : `${Number(at.amount).toLocaleString()}원`}
-                    </td>
-                    <td class="py-2.5 px-3 text-center whitespace-nowrap space-x-1">
-                        <button onclick="toggleAtActive('${at.id}')" class="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 rounded text-amber-800 font-bold">${isPaused ? '재개' : '중지'}</button>
-                        <button onclick="startEditAt('${at.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
-                        <button onclick="deleteAt('${at.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
-                    </td>
-                </tr>`;
-        }).join('');
+    if (toggleAllBtn) {
+        toggleAllBtn.classList.remove('hidden');
+        const allOpen = groups.every(g => !!atMasterExpandedUsers[g.owner]);
+        toggleAllBtn.textContent = allOpen ? '모두 접기' : '모두 펼치기';
     }
 
-    if (cardList) {
-        cardList.innerHTML = list.map(at => {
-            const isEnded = !!(at.endYM && at.endYM < nowYM);
-            const isPaused = (at.active === false);
-            const b = getTypeBehavior(at.type);
-            const isTr = (b === 'transfer' || b === 'voucher');
-            const methodDisplay = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
-            const cycleLabel = at.cycleType === 'specific'
-                ? `${(at.months || []).map(m => m + '월').join(', ')} (${at.dayOfMonth}일)`
-                : `매월 ${at.dayOfMonth === 31 ? '말일' : at.dayOfMonth + '일'}`;
-            const statusBadge = isEnded
-                ? `<span class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-bold text-[10px] shrink-0 whitespace-nowrap">종료됨</span>`
-                : (isPaused
-                    ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] shrink-0 whitespace-nowrap">일시중지</span>`
-                    : `<span class="px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold text-[10px] shrink-0 whitespace-nowrap">사용 중</span>`);
-            const amtHtml = at.amountType === 'variable'
-                ? `<span class="text-purple-700 font-bold text-xs whitespace-nowrap">변동 (전년동월)</span>`
-                : `<span class="font-bold text-sm text-gray-800 whitespace-nowrap">${Number(at.amount).toLocaleString()}원</span>`;
+    groupedWrap.innerHTML = groups.map(g => {
+        const isOpen = !!atMasterExpandedUsers[g.owner];
+        const escOwner = g.owner.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-            return `
-                <div class="bg-white p-3.5 rounded-2xl border border-gray-200 space-y-2 text-xs ${isPaused || isEnded ? 'opacity-60' : ''}">
-                    <div class="flex justify-between items-start gap-2">
-                        <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
-                            ${statusBadge}
-                            ${getOwnerBadgeHtml(at.user)}
-                            <span class="font-bold text-sm text-gray-800 truncate">${escHtml(at.name)}</span>
-                            ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold whitespace-nowrap">${at.installmentMonths}개월</span>` : ''}
-                        </div>
-                        <div class="shrink-0">${amtHtml}</div>
+        const expCnt = g.items.filter(x => getTypeBehavior(x.type) === 'expense').length;
+        const trCnt = g.items.filter(x => {
+            const b = getTypeBehavior(x.type);
+            return b === 'transfer' || b === 'voucher';
+        }).length;
+        const incCnt = g.items.filter(x => getTypeBehavior(x.type) === 'income').length;
+        const summaryParts = [];
+        if (expCnt > 0) summaryParts.push(`지출 ${expCnt}`);
+        if (trCnt > 0) summaryParts.push(`이체 ${trCnt}`);
+        if (incCnt > 0) summaryParts.push(`수입 ${incCnt}`);
+        const summaryText = summaryParts.join(' · ');
+
+        const bodyHtml = isOpen ? `
+            <div class="hidden md:block border-t border-gray-200 overflow-x-auto">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead class="bg-gray-50 text-gray-500 border-b border-gray-200">
+                        <tr>
+                            <th class="py-2.5 px-3">상태</th>
+                            <th class="py-2.5 px-3">항목 / 분류</th>
+                            <th class="py-2.5 px-3">주기 / 기간</th>
+                            <th class="py-2.5 px-3">결제수단 / 계좌</th>
+                            <th class="py-2.5 px-3 text-right">금액 기준</th>
+                            <th class="py-2.5 px-3 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ${g.items.map(at => {
+                            const isEnded = !!(at.endYM && at.endYM < nowYM);
+                            const isPaused = (at.active === false);
+                            const b = getTypeBehavior(at.type);
+                            const isTr = (b === 'transfer' || b === 'voucher');
+                            const methodDisplay = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
+                            const cycleLabel = at.cycleType === 'specific'
+                                ? `${(at.months || []).map(m => m + '월').join(', ')} (${at.dayOfMonth}일)`
+                                : `매월 ${at.dayOfMonth === 31 ? '말일' : at.dayOfMonth + '일'}`;
+                            const statusBadge = isEnded
+                                ? `<span class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-bold text-[10px]">종료됨</span>`
+                                : (isPaused
+                                    ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">일시중지</span>`
+                                    : `<span class="px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold text-[10px]">사용 중</span>`);
+                            const incBadge = (isTr && at.includeInExpense)
+                                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold">고정비 포함</span>` : '';
+
+                            return `
+                                <tr class="hover:bg-orange-50/30 ${isPaused || isEnded ? 'opacity-60' : ''}">
+                                    <td class="py-2.5 px-3 whitespace-nowrap">${statusBadge}</td>
+                                    <td class="py-2.5 px-3">
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <span class="font-bold text-gray-800">${escHtml(at.name)}</span>
+                                            ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1 rounded bg-pink-100 text-pink-800 font-bold">${at.installmentMonths}개월</span>` : ''}
+                                            ${incBadge}
+                                        </div>
+                                        <div class="text-[10px] text-gray-400 mt-0.5">${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-gray-600 whitespace-nowrap">
+                                        <div>${cycleLabel}</div>
+                                        <div class="text-[10px] text-gray-400">${at.startYM || '-'} ~ ${at.endYM || '무기한'}${at.shiftBusinessDay ? ' · 영업일' : ''}</div>
+                                    </td>
+                                    <td class="py-2.5 px-3 text-gray-600 whitespace-nowrap">${escHtml(methodDisplay)}</td>
+                                    <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap">
+                                        ${at.amountType === 'variable' ? `<span class="text-purple-700">변동 (전년동월)</span>` : `${Number(at.amount).toLocaleString()}원`}
+                                    </td>
+                                    <td class="py-2.5 px-3 text-center whitespace-nowrap space-x-1">
+                                        <button onclick="toggleAtActive('${at.id}')" class="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 rounded text-amber-800 font-bold">${isPaused ? '재개' : '중지'}</button>
+                                        <button onclick="startEditAt('${at.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
+                                        <button onclick="deleteAt('${at.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
+                                    </td>
+                                </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div class="md:hidden border-t border-gray-200 p-3 space-y-2 bg-gray-50">
+                ${g.items.map(at => {
+                    const isEnded = !!(at.endYM && at.endYM < nowYM);
+                    const isPaused = (at.active === false);
+                    const b = getTypeBehavior(at.type);
+                    const isTr = (b === 'transfer' || b === 'voucher');
+                    const methodDisplay = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
+                    const cycleLabel = at.cycleType === 'specific'
+                        ? `${(at.months || []).map(m => m + '월').join(', ')} (${at.dayOfMonth}일)`
+                        : `매월 ${at.dayOfMonth === 31 ? '말일' : at.dayOfMonth + '일'}`;
+                    const statusBadge = isEnded
+                        ? `<span class="px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-bold text-[10px] shrink-0 whitespace-nowrap">종료됨</span>`
+                        : (isPaused
+                            ? `<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] shrink-0 whitespace-nowrap">일시중지</span>`
+                            : `<span class="px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-bold text-[10px] shrink-0 whitespace-nowrap">사용 중</span>`);
+                    const incBadge = (isTr && at.includeInExpense)
+                        ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold whitespace-nowrap">고정비 포함</span>` : '';
+                    const amtHtml = at.amountType === 'variable'
+                        ? `<span class="text-purple-700 font-bold text-xs whitespace-nowrap">변동 (전년동월)</span>`
+                        : `<span class="font-bold text-sm text-gray-800 whitespace-nowrap">${Number(at.amount).toLocaleString()}원</span>`;
+
+                    return `
+                        <div class="bg-white p-3.5 rounded-2xl border border-gray-200 space-y-2 text-xs ${isPaused || isEnded ? 'opacity-60' : ''}">
+                            <div class="flex justify-between items-start gap-2">
+                                <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                    ${statusBadge}
+                                    <span class="font-bold text-sm text-gray-800 truncate">${escHtml(at.name)}</span>
+                                    ${Number(at.installmentMonths) > 1 ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold whitespace-nowrap">${at.installmentMonths}개월</span>` : ''}
+                                    ${incBadge}
+                                </div>
+                                <div class="shrink-0">${amtHtml}</div>
+                            </div>
+                            <div class="text-[11px] text-gray-500 space-y-0.5">
+                                <div>${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
+                                <div><b class="text-gray-700">${cycleLabel}</b> · ${at.startYM || '-'} ~ ${at.endYM || '무기한'}${at.shiftBusinessDay ? ' · 영업일' : ''}</div>
+                                <div class="truncate">수단: ${escHtml(methodDisplay)}</div>
+                            </div>
+                            <div class="flex justify-end gap-1.5 pt-2 border-t border-gray-100">
+                                <button onclick="toggleAtActive('${at.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-800 font-bold text-[11px] whitespace-nowrap">${isPaused ? '재개' : '중지'}</button>
+                                <button onclick="startEditAt('${at.id}')" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-bold text-[11px] whitespace-nowrap">수정</button>
+                                <button onclick="deleteAt('${at.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 rounded-lg text-red-600 font-bold text-[11px] whitespace-nowrap">삭제</button>
+                            </div>
+                        </div>`;
+                }).join('')}
+            </div>` : '';
+
+        return `
+            <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+                <div onclick="toggleAtMasterUserGroup('${escOwner}')" class="px-4 py-3 flex justify-between items-center gap-2 cursor-pointer hover:bg-gray-50 select-none">
+                    <div class="flex items-center gap-2 min-w-0">
+                        ${getOwnerBadgeHtml(g.owner)}
+                        <span class="font-bold text-sm text-gray-800 truncate">${escHtml(g.owner)}</span>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-800 font-bold shrink-0">${g.items.length}건</span>
                     </div>
-                    <div class="text-[11px] text-gray-500 space-y-0.5">
-                        <div>${escHtml(at.type)} (${escHtml(at.catMain)}${at.catSub ? '/' + escHtml(at.catSub) : ''})</div>
-                        <div><b class="text-gray-700">${cycleLabel}</b> · ${at.startYM || '-'} ~ ${at.endYM || '무기한'}${at.shiftBusinessDay ? ' · 영업일' : ''}</div>
-                        <div class="truncate">수단: ${escHtml(methodDisplay)}</div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-[11px] text-gray-500 font-bold whitespace-nowrap">${summaryText}</span>
+                        <span class="text-[11px] text-gray-500 font-bold">${isOpen ? '▲' : '▼'}</span>
                     </div>
-                    <div class="flex justify-end gap-1.5 pt-2 border-t border-gray-100">
-                        <button onclick="toggleAtActive('${at.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 rounded-lg text-amber-800 font-bold text-[11px] whitespace-nowrap">${isPaused ? '재개' : '중지'}</button>
-                        <button onclick="startEditAt('${at.id}')" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 font-bold text-[11px] whitespace-nowrap">수정</button>
-                        <button onclick="deleteAt('${at.id}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 rounded-lg text-red-600 font-bold text-[11px] whitespace-nowrap">삭제</button>
-                    </div>
-                </div>`;
-        }).join('');
-    }
+                </div>
+                ${bodyHtml}
+            </div>`;
+    }).join('');
 }

@@ -375,7 +375,7 @@
         <div class="bg-white p-3.5 sm:p-4 rounded-2xl border-2 border-orange-100 shadow-sm flex flex-col justify-between">
           <div class="flex justify-between items-center">
             <span class="text-xs font-bold text-gray-500">이번 달 예상 고정 지출</span>
-            <span class="text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded font-bold">지출형</span>
+            <span class="text-[10px] bg-orange-50 text-orange-700 px-2 py-0.5 rounded font-bold">지출 · 고정비포함</span>
           </div>
           <div id="atSumExpense" class="text-lg sm:text-xl font-bold text-rose-500 mt-1">0원</div>
           <div id="atSumAnnualHint" class="text-[11px] text-gray-400 mt-0.5">등록된 연간 세금·보험 없음</div>
@@ -420,7 +420,7 @@
         <div id="atExecutionList" class="space-y-2.5"></div>
       </div>
 
-      <!-- 정기 항목 관리 (PC·모바일 모두 기본 접힘 아코디언) -->
+      <!-- 정기 항목 관리 (PC·모바일 기본 접힘 + 내부 사용자별 아코디언) -->
       <div class="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-gray-200 space-y-4">
         <div class="flex flex-wrap justify-between items-center gap-2">
           <div onclick="toggleCollapsibleSection('atMasterSectionBody', 'atMasterCollapseBtn', '목록 펼치기 ▼', '접기 ▲')" class="flex items-center gap-2 min-w-0 cursor-pointer select-none">
@@ -434,7 +434,7 @@
         </div>
 
         <div id="atMasterSectionBody" class="hidden space-y-4 pt-3 border-t border-gray-100">
-          <p class="text-xs text-gray-500">여기서 금액을 수정하거나 중지·삭제해도 이미 반영된 과거 달의 내역은 그대로 유지됩니다.</p>
+          <p class="text-xs text-gray-500">사용자별로 묶여 표시되며, 여기서 금액을 수정하거나 중지·삭제해도 이미 반영된 과거 달의 내역은 그대로 유지됩니다.</p>
 
           <div id="atFormCollapse" class="hidden bg-amber-50/40 p-4 sm:p-5 rounded-2xl border border-amber-200 space-y-4">
             <div class="flex justify-between items-center border-b border-amber-200 pb-2">
@@ -489,14 +489,24 @@
                 <p class="text-[11px] text-gray-400">위 [이번 달 정기 지출·이체 반영] 목록에서도 반영 직전에 할부 개월 수를 바로 바꿀 수 있습니다.</p>
               </div>
 
-              <div id="atMethodTransferWrap" class="hidden grid grid-cols-1 md:grid-cols-2 gap-3 bg-purple-50/60 p-3 rounded-xl border border-purple-200">
-                <div>
-                  <label class="block font-bold text-purple-900 mb-1">출금 계좌</label>
-                  <select id="atFromAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+              <!-- 이체·저축 / 상품권충전 계좌 + 지출 분석(고정비) 포함 체크박스 -->
+              <div id="atMethodTransferWrap" class="hidden space-y-2.5 bg-purple-50/60 p-3 rounded-xl border border-purple-200">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block font-bold text-purple-900 mb-1">출금 계좌</label>
+                    <select id="atFromAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+                  </div>
+                  <div>
+                    <label class="block font-bold text-purple-900 mb-1">입금 자산 (적금/계좌/투자/대출/상품권)</label>
+                    <select id="atToAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+                  </div>
                 </div>
-                <div>
-                  <label class="block font-bold text-purple-900 mb-1">입금 자산 (적금/계좌/투자/대출/상품권)</label>
-                  <select id="atToAccount" class="w-full p-2 bg-white border border-purple-200 rounded-xl"></select>
+                <div id="atIncludeExpenseWrap" class="hidden pt-2 border-t border-purple-200">
+                  <label class="flex items-center space-x-2 cursor-pointer">
+                    <input type="checkbox" id="atIncludeInExpense" class="rounded accent-purple-600">
+                    <span class="font-bold text-purple-900">지출 분석(고정비)에 포함</span>
+                  </label>
+                  <p class="text-[11px] text-gray-500 mt-1">청약·적금·대출 원금 상환처럼 돈이 묶여 빠져나가는 항목에 체크하면 <b>[자산 현황]은 그대로 유지</b>되면서 <b>[지출 분석] 고정비·총 지출</b>에 포함됩니다.</p>
                 </div>
               </div>
 
@@ -558,32 +568,18 @@
             </form>
           </div>
 
-          <div class="flex justify-between items-center">
+          <div class="flex flex-wrap justify-between items-center gap-2">
             <div class="flex bg-gray-100 p-1 rounded-xl gap-1">
               <button onclick="setAtMasterFilter('active')" id="atFilter-active" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-gray-800 shadow-sm">사용 중</button>
               <button onclick="setAtMasterFilter('paused')" id="atFilter-paused" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">일시중지</button>
               <button onclick="setAtMasterFilter('ended')" id="atFilter-ended" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">종료됨</button>
               <button onclick="setAtMasterFilter('all')" id="atFilter-all" class="px-2.5 py-1 rounded-lg text-xs font-bold text-gray-500">전체</button>
             </div>
+            <button type="button" id="atMasterToggleAllBtn" onclick="toggleAllAtMasterUserGroups()" class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold whitespace-nowrap">모두 펼치기</button>
           </div>
 
-          <div class="hidden md:block overflow-x-auto border border-gray-100 rounded-2xl">
-            <table class="w-full text-left border-collapse text-xs">
-              <thead class="bg-gray-50 text-gray-500 border-b border-gray-200">
-                <tr>
-                  <th class="py-2.5 px-3">상태</th>
-                  <th class="py-2.5 px-3">항목 / 분류</th>
-                  <th class="py-2.5 px-3">주기 / 기간</th>
-                  <th class="py-2.5 px-3">결제수단 / 계좌</th>
-                  <th class="py-2.5 px-3 text-right">금액 기준</th>
-                  <th class="py-2.5 px-3 text-center">관리</th>
-                </tr>
-              </thead>
-              <tbody id="atMasterTableBody" class="divide-y divide-gray-100"></tbody>
-            </table>
-          </div>
-
-          <div id="atMasterCardList" class="md:hidden space-y-2.5"></div>
+          <!-- 사용자별 접이식 정기 항목 목록 -->
+          <div id="atMasterGroupedList" class="space-y-2.5"></div>
         </div>
       </div>
     </section>
@@ -775,7 +771,7 @@
           <div class="flex justify-between items-center gap-2 border-b border-pink-200 pb-2.5">
             <div>
               <h3 class="title-font text-lg text-pink-900">부채 및 신용카드 미결제</h3>
-              <p class="text-[11px] text-pink-700/70">종류를 누르면 상세 내역이 펼쳐집니다.</p>
+              <p class="text-[11px] text-pink-700/70">신용카드를 누르면 미결제 상세 팝업이 열립니다.</p>
             </div>
             <button type="button" id="asset5DebtToggleAllBtn" onclick="toggleAllAsset5DebtGroups()" class="px-2.5 py-1 bg-white hover:bg-pink-50 border border-pink-200 text-pink-800 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0">모두 펼치기</button>
           </div>

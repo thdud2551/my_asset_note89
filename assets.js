@@ -1,5 +1,5 @@
 // =========================================================
-// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 마이너스통장 자산/부채 자동 전환)
+// [5. 자산 현황] 전용 모듈 (5개 자산 그룹 아코디언 · 마통 자동전환 · 카드 미결제 상세 팝업)
 // =========================================================
 let asset5TrendMode = '6m'; // '6m' | 'year'
 let asset5ExpandedBank = {}; // key: 'cash' | 'voucher' | 'saving' | 'invest' | 'real'
@@ -39,6 +39,9 @@ function getAssetFirstRecordYM(curYM) {
 }
 
 function computeAssetSnapshotAsOf(asOfDate) {
+    const todayStr = formatYMD(new Date());
+    const isLiveSnapshot = (asOfDate >= todayStr);
+
     const bankCostMap = {};
     const debtBalMap = {};
     const cardUnpaidMap = {};
@@ -101,14 +104,20 @@ function computeAssetSnapshotAsOf(asOfDate) {
     });
 
     (db.cardEvents || []).forEach(ev => {
-        if (!ev.date || ev.date > asOfDate) return;
+        if (!ev.date) return;
+        const isFutureEvent = ev.date > asOfDate;
+        // 과거 월말 스냅샷은 해당 시점 이전 이벤트만 반영, 현재(실시간) 스냅샷은 미리 정산·선결제한 카드값을 즉시 차감
+        if (isFutureEvent && !isLiveSnapshot) return;
+
         const fromId = resolveToAssetId(ev.fromAccount);
         const card = findAsset(ev.cardId || ev.cardName);
 
         if (ev.type === 'settlement') {
             const actualAmt = Number(ev.actualAmount) || 0;
             const expectedAmt = Number(ev.expectedAmount) || 0;
-            applyAccountDelta(fromId, -actualAmt);
+            if (!isFutureEvent) {
+                applyAccountDelta(fromId, -actualAmt);
+            }
             if (card && card.type === '신용카드') {
                 const revAmt = Number(ev.revolvingAmount) || 0;
                 const cleared = Math.max(0, expectedAmt - revAmt);
@@ -116,7 +125,9 @@ function computeAssetSnapshotAsOf(asOfDate) {
             }
         } else if (ev.type === 'prepay_item' || ev.type === 'prepay_amount') {
             const amt = Number(ev.amount) || 0;
-            applyAccountDelta(fromId, -amt);
+            if (!isFutureEvent) {
+                applyAccountDelta(fromId, -amt);
+            }
             if (card && card.type === '신용카드') {
                 cardUnpaidMap[card.id] = Math.max(0, (cardUnpaidMap[card.id] || 0) - amt);
             }
@@ -408,14 +419,15 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
     if (cardDebtItems.length > 0) {
         const isOpen = !!asset5ExpandedDebt.card;
         const rows = isOpen ? `<div class="pt-2.5 mt-2.5 border-t border-pink-100 space-y-2">${cardDebtItems.map(({ asset, unpaid }) => `
-            <div class="bg-pink-50/30 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs">
+            <div onclick="openCardUnpaidDetailModal('${asset.id}')" class="bg-pink-50/30 hover:border-pink-300 p-3 rounded-xl border border-pink-100 flex flex-wrap justify-between items-center gap-2 text-xs cursor-pointer transition">
                 <div class="flex items-center gap-1.5 flex-wrap">
                     ${getOwnerBadgeHtml(asset.owner)}
                     <span class="px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold text-[10px]">신용카드</span>
                     <span class="font-bold text-gray-800 text-sm">${escHtml(asset.name)}</span>
                 </div>
-                <div class="flex items-center gap-2 ml-auto">
+                <div class="flex items-center gap-1.5 ml-auto">
                     <span class="font-bold text-sm whitespace-nowrap ${unpaid > 0 ? 'text-rose-600' : 'text-gray-400'}">${unpaid.toLocaleString()}원</span>
+                    <button onclick="event.stopPropagation(); openCardUnpaidDetailModal('${asset.id}')" class="px-2 py-1 bg-pink-100 hover:bg-pink-200 text-pink-900 rounded-lg text-[10px] font-bold whitespace-nowrap">상세</button>
                     <button onclick="event.stopPropagation(); switchMainTab('tab2')" class="px-2 py-1 bg-white border border-pink-200 hover:bg-pink-50 text-pink-700 rounded-lg text-[10px] font-bold whitespace-nowrap">결제·출금</button>
                 </div>
             </div>`).join('')}</div>` : '';
@@ -438,6 +450,200 @@ function renderAsset5DebtList(debtItems, cardDebtItems) {
     }
 
     container.innerHTML = html;
+}
+
+// =========================================================
+// 신용카드 미결제 상세내역 진단 팝업
+// =========================================================
+function openCardUnpaidDetailModal(cardId) {
+    const card = findAsset(cardId);
+    if (!card) return;
+
+    const todayStr = formatYMD(new Date());
+    const curY = todayObj.getFullYear();
+    const curM = todayObj.getMonth() + 1;
+    const curYM = formatYM(curY, curM);
+
+    const cardTxs = (db.transactions || []).filter(t => {
+        if (getTypeBehavior(t.type) !== 'expense') return false;
+        const mAsset = findAsset(t.method);
+        return mAsset && mAsset.id === card.id;
+    });
+    const pastAndTodayTxs = cardTxs.filter(t => t.date && t.date <= todayStr);
+    const futureTxs = cardTxs.filter(t => t.date && t.date > todayStr).sort((a, b) => a.date.localeCompare(b.date));
+
+    const cardEvents = (db.cardEvents || []).filter(ev => isCardEventMatch(ev, card));
+    const settlements = cardEvents.filter(ev => ev.type === 'settlement');
+    const prepays = cardEvents.filter(ev => ev.type === 'prepay_item' || ev.type === 'prepay_amount');
+
+    const revolvingInit = Number(card.revolving) || 0;
+    const totalUsedToToday = pastAndTodayTxs.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const totalSettledCleared = settlements.reduce((s, ev) => s + Math.max(0, (Number(ev.expectedAmount) || 0) - (Number(ev.revolvingAmount) || 0)), 0);
+    const totalPrepaid = prepays.reduce((s, ev) => s + (Number(ev.amount) || 0), 0);
+    const finalUnpaid = Math.max(0, revolvingInit + totalUsedToToday - totalSettledCleared - totalPrepaid);
+
+    const earlySettlements = settlements.filter(ev => ev.date && ev.date > todayStr);
+
+    // 관련 청구월 전부 수집 (일시불 + 할부 회차 + 이벤트 청구월)
+    const ymSet = new Set([curYM, formatYM(addMonthToYM(curY, curM, 1).y, addMonthToYM(curY, curM, 1).m)]);
+    cardTxs.forEach(t => {
+        if (!t.date) return;
+        const firstBill = findFirstBillingYMForTx(card, t.date);
+        const months = Number(t.installmentMonths) || 1;
+        for (let i = 0; i < months; i++) {
+            const bm = addMonthToYM(firstBill.y, firstBill.m, i);
+            ymSet.add(formatYM(bm.y, bm.m));
+        }
+    });
+    cardEvents.forEach(ev => {
+        if (ev.billingYM) ymSet.add(ev.billingYM);
+    });
+
+    const sortedYMs = Array.from(ymSet).sort();
+    const unsettledBills = [];
+    const postSettleDiffs = [];
+    const unsettledItemsToToday = [];
+
+    sortedYMs.forEach(ym => {
+        const [y, m] = ym.split('-').map(Number);
+        const bill = computeCardBillForMonth(card, y, m, false);
+
+        if (bill.settlement) {
+            const curNetExpected = Math.max(0, bill.grossAmount - bill.itemPrepaidSum - bill.amountPrepaidSum);
+            const settledExpected = Number(bill.settlement.expectedAmount) || 0;
+            const diff = curNetExpected - settledExpected;
+            if (diff !== 0) {
+                postSettleDiffs.push({ ym, y, m, diff, curNetExpected, settledExpected });
+            }
+        } else {
+            const todayItems = bill.items.filter(it => !it.isPrepaid && it.date <= todayStr);
+            const todayItemsSum = todayItems.reduce((s, x) => s + x.billAmount, 0);
+            const todayRemain = Math.max(0, todayItemsSum - bill.amountPrepaidSum);
+            const futureItemsSum = bill.items.filter(it => !it.isPrepaid && it.date > todayStr).reduce((s, x) => s + x.billAmount, 0);
+
+            if (todayRemain > 0 || bill.remainingAmount > 0) {
+                unsettledBills.push({
+                    ym, y, m, bill,
+                    todayRemain,
+                    futureItemsSum,
+                    todayCount: todayItems.length,
+                    instCount: todayItems.filter(it => it.installmentMonths > 1).length,
+                    isPastMonth: ym < curYM
+                });
+                todayItems.forEach(it => {
+                    unsettledItemsToToday.push({ ...it, billingYM: ym });
+                });
+            }
+        }
+    });
+
+    // 알림 배너 (미리 정산 / 정산 후 변경 차액 / 미래 날짜 지출)
+    let noticesHtml = '';
+    if (earlySettlements.length > 0) {
+        const txt = earlySettlements.map(ev => `${ev.billingYM}분(${ev.date} 결제 예정, ${Number(ev.expectedAmount).toLocaleString()}원)`).join(', ');
+        noticesHtml += `
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-2.5 text-[11px] text-blue-900">
+                <b>미리 정산 즉시 차감 적용:</b> ${escHtml(txt)}이 미결제 금액에서 바로 차감되었습니다. <span class="text-blue-700">(통장 잔액 출금은 결제일에 반영)</span>
+            </div>`;
+    }
+    if (postSettleDiffs.length > 0) {
+        noticesHtml += postSettleDiffs.map(d => `
+            <div class="bg-amber-50 border border-amber-300 rounded-xl p-2.5 text-[11px] text-amber-900">
+                <b>정산 후 내역 변경 감지 (${d.y}년 ${d.m}월 청구분):</b> 정산 당시 원금(${d.settledExpected.toLocaleString()}원)과 현재 청구 원금(${d.curNetExpected.toLocaleString()}원)에 <b>${d.diff > 0 ? '+' : ''}${d.diff.toLocaleString()}원</b> 차이가 있습니다. [결제·출금]에서 정산 취소 후 다시 정산해 주세요.
+            </div>`).join('');
+    }
+    if (futureTxs.length > 0) {
+        const fSum = futureTxs.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        noticesHtml += `
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-[11px] text-gray-600">
+                <b>오늘(${todayStr}) 이후 미래 날짜 지출 ${futureTxs.length}건 (${fSum.toLocaleString()}원):</b> 아직 결제일이 도래하지 않은 미래 입력 내역이므로 현재 미결제 금액에는 포함되지 않았습니다.
+            </div>`;
+    }
+
+    // 청구월별 미결제 요약
+    const monthsHtml = unsettledBills.length === 0
+        ? `<div class="text-xs text-gray-400 py-4 text-center bg-gray-50 rounded-xl">미정산 청구 예정 내역이 없습니다.</div>`
+        : `<div class="space-y-1.5">${unsettledBills.map(u => {
+            const tag = u.isPastMonth
+                ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">미정산 과거월</span>`
+                : (u.instCount > 0
+                    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">할부 ${u.instCount}건 포함</span>`
+                    : `<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">청구 예정</span>`);
+            return `
+                <div class="p-2.5 rounded-xl border ${u.isPastMonth ? 'border-rose-200 bg-rose-50' : 'border-pink-100 bg-white'} flex justify-between items-center gap-2 text-xs">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="font-bold text-gray-800">${u.y}년 ${u.m}월 청구</span>
+                            ${tag}
+                        </div>
+                        <div class="text-[10px] text-gray-400 mt-0.5">이용기간 ${u.bill.period.start} ~ ${u.bill.period.end} · 오늘까지 ${u.todayCount}건${u.futureItemsSum > 0 ? ` (미래 +${u.futureItemsSum.toLocaleString()}원 별도)` : ''}</div>
+                    </div>
+                    <span class="font-bold text-sm ${u.isPastMonth ? 'text-rose-600' : 'text-pink-700'} shrink-0 whitespace-nowrap">${u.todayRemain.toLocaleString()}원</span>
+                </div>`;
+        }).join('')}</div>`;
+
+    // 미결제 포함 세부 지출 리스트
+    unsettledItemsToToday.sort((a, b) => a.billingYM.localeCompare(b.billingYM) || b.date.localeCompare(a.date));
+    const itemsHtml = unsettledItemsToToday.length === 0
+        ? `<div class="text-xs text-gray-400 py-4 text-center bg-gray-50 rounded-xl">표시할 미결제 지출 내역이 없습니다.</div>`
+        : `<div class="space-y-1.5 max-h-[210px] overflow-y-auto pr-1">${unsettledItemsToToday.map(it => `
+            <div class="p-2.5 rounded-xl border border-gray-200 bg-white flex justify-between items-center gap-2 text-xs">
+                <div class="min-w-0 pr-2">
+                    <div class="flex items-center gap-1 flex-wrap font-bold text-gray-800">
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-50 text-pink-800 whitespace-nowrap">${it.billingYM.slice(5)}월 청구</span>
+                        <span class="text-[10px] px-1 py-0.5 rounded bg-gray-100 text-gray-600">${escHtml(it.user)}</span>
+                        <span class="truncate">${escHtml(it.memo)}</span>
+                        ${it.installmentMonths > 1 ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 whitespace-nowrap">${it.installmentIndex}/${it.installmentMonths}회차</span>` : ''}
+                    </div>
+                    <div class="text-[10px] text-gray-400 mt-0.5">${it.date} · ${escHtml(it.catMain)}${it.catSub ? '/' + escHtml(it.catSub) : ''}</div>
+                </div>
+                <span class="font-bold text-gray-800 shrink-0 whitespace-nowrap">${it.billAmount.toLocaleString()}원</span>
+            </div>`).join('')}</div>`;
+
+    openCustomModal(`
+        <div class="flex justify-between items-start gap-2 border-b border-pink-100 pb-3">
+            <div>
+                <div class="flex items-center gap-1.5">
+                    ${getOwnerBadgeHtml(card.owner)}
+                    <h3 class="title-font text-xl text-pink-900">${escHtml(card.name)} 미결제 상세</h3>
+                </div>
+                <div class="text-[11px] text-gray-500 mt-0.5">${todayStr} 기준 · 매월 ${card.payDay}일 결제 · 출금: ${escHtml(getAssetLabel(card.linkedAccount))}</div>
+            </div>
+            <button onclick="closeCustomModal()" class="text-xs px-2.5 py-1 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-600">닫기</button>
+        </div>
+
+        <div class="bg-pink-50 p-3.5 rounded-2xl border border-pink-200 space-y-2 text-xs">
+            <div class="flex justify-between items-baseline">
+                <span class="font-bold text-pink-900">현재 미결제 총액</span>
+                <span class="text-2xl font-bold text-rose-600">${finalUnpaid.toLocaleString()}원</span>
+            </div>
+            <div class="border-t border-pink-200 pt-2 space-y-1 text-[11px] text-gray-600">
+                <div class="flex justify-between"><span>오늘까지 누적 사용액 (${pastAndTodayTxs.length}건)</span><span class="font-bold text-gray-800">+${totalUsedToToday.toLocaleString()}원</span></div>
+                ${revolvingInit > 0 ? `<div class="flex justify-between"><span>초기·리볼빙 이월잔액</span><span class="font-bold text-rose-600">+${revolvingInit.toLocaleString()}원</span></div>` : ''}
+                ${totalSettledCleared > 0 ? `<div class="flex justify-between"><span>결제 완료 정산 차감 (${settlements.length}건)</span><span class="font-bold text-blue-600">-${totalSettledCleared.toLocaleString()}원</span></div>` : ''}
+                ${totalPrepaid > 0 ? `<div class="flex justify-between"><span>선결제 차감 (${prepays.length}건)</span><span class="font-bold text-orange-600">-${totalPrepaid.toLocaleString()}원</span></div>` : ''}
+            </div>
+        </div>
+
+        ${noticesHtml ? `<div class="space-y-1.5">${noticesHtml}</div>` : ''}
+
+        <div class="space-y-1.5">
+            <div class="text-xs font-bold text-gray-700">청구월별 미결제 구성</div>
+            ${monthsHtml}
+        </div>
+
+        <div class="space-y-1.5">
+            <div class="flex justify-between items-center text-xs">
+                <span class="font-bold text-gray-700">미결제 포함 지출 내역 (${unsettledItemsToToday.length}건)</span>
+                <span class="text-[10px] text-gray-400">할부 잔여 회차 포함</span>
+            </div>
+            ${itemsHtml}
+        </div>
+
+        <div class="flex gap-2 pt-2 border-t border-gray-100">
+            <button onclick="closeCustomModal(); switchMainTab('tab2');" class="flex-1 py-2.5 btn-pink rounded-xl text-xs shadow-sm">결제·출금 탭에서 정산 관리</button>
+            <button onclick="closeCustomModal()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold">닫기</button>
+        </div>`);
 }
 
 function renderAsset5DonutChart(groupTotals, totalAssets) {
@@ -582,18 +788,18 @@ function openBalanceAdjustModal(assetId, currentVal) {
         openCustomModal(`
             <h3 class="title-font text-lg text-blue-900">${escHtml(getAssetLabel(a.id))} 잔액 보정</h3>
             <p class="text-xs text-gray-500">플러스(+) 잔액은 보유 자산으로, 마이너스(-) 사용액은 부채로 자동 반영됩니다.</p>
-            <div class="bg-blue-50/50 p-3 rounded-xl text-xs flex justify-between items-center">
+            <div class="bg-blue-50 p-3 rounded-xl text-xs flex justify-between items-center">
                 <span class="text-gray-600">현재 계산된 잔액</span>
                 ${curText}
             </div>
             <div class="space-y-2.5 text-xs">
                 <label class="block font-bold text-gray-600">실제 통장 잔액 상태</label>
                 <div class="grid grid-cols-2 gap-2">
-                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-blue-200 bg-blue-50/40 cursor-pointer font-bold text-blue-800">
+                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-blue-200 bg-blue-50 cursor-pointer font-bold text-blue-800">
                         <input type="radio" name="modalMinusSign" value="plus" ${!isNeg ? 'checked' : ''} class="accent-blue-500">
                         <span>+ 플러스 (예치)</span>
                     </label>
-                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-rose-200 bg-rose-50/40 cursor-pointer font-bold text-rose-700">
+                    <label class="flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-rose-200 bg-rose-50 cursor-pointer font-bold text-rose-700">
                         <input type="radio" name="modalMinusSign" value="minus" ${isNeg ? 'checked' : ''} class="accent-rose-500">
                         <span>- 마이너스 (부채)</span>
                     </label>
@@ -616,7 +822,7 @@ function openBalanceAdjustModal(assetId, currentVal) {
     openCustomModal(`
         <h3 class="title-font text-lg text-blue-900">${escHtml(getAssetLabel(a.id))} 잔액 보정</h3>
         <p class="text-xs text-gray-500">실제 은행 앱 잔액과 차이가 날 때 지출·수입 통계에 영향을 주지 않고 현재 잔액을 바로 맞춥니다.</p>
-        <div class="bg-blue-50/50 p-3 rounded-xl text-xs flex justify-between items-center">
+        <div class="bg-blue-50 p-3 rounded-xl text-xs flex justify-between items-center">
             <span class="text-gray-600">현재 계산된 잔액</span>
             <span class="font-bold text-sm text-gray-800">${currentVal.toLocaleString()}원</span>
         </div>
@@ -663,7 +869,7 @@ function openValuationModal(assetId, costBasis, currentVal) {
     openCustomModal(`
         <h3 class="title-font text-lg text-purple-900">${escHtml(getAssetLabel(a.id))} 평가액 갱신</h3>
         <p class="text-xs text-gray-500">증권사 앱이나 시세에서 확인한 현재 평가금액을 입력해 주세요. 이후 새로 매수(이체)하는 금액은 이 평가액에 자동으로 더해집니다.</p>
-        <div class="bg-purple-50/50 p-3 rounded-xl text-xs space-y-1">
+        <div class="bg-purple-50 p-3 rounded-xl text-xs space-y-1">
             <div class="flex justify-between"><span class="text-gray-600">누적 투자 원금 (이체 합계)</span><span class="font-bold text-gray-800">${costBasis.toLocaleString()}원</span></div>
             <div class="flex justify-between"><span class="text-gray-600">직전 반영된 평가액</span><span class="font-bold text-purple-800">${currentVal.toLocaleString()}원</span></div>
         </div>

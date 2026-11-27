@@ -1,5 +1,5 @@
 // =========================================================
-// [4. 지출 분석] 전용 모듈 (멀티 사용자 · 실적관리 카드 필터 · 빈 달 제외 추이)
+// [4. 지출 분석] 전용 모듈 (멀티 사용자 · 고정비 포함 이체 반영 · 빈 달 제외 추이)
 // =========================================================
 const DONUT_PALETTE = [
     '#FF8787', '#FFD43B', '#74C0FC', '#63E6BE', '#B197FC',
@@ -19,6 +19,18 @@ function formatGraphManWon(amt) {
     if (!amt || amt <= 0) return '0';
     const val = Math.round(amt / 1000) / 10;
     return `${val.toFixed(1)}만`;
+}
+
+// 지출형 거래 또는 '지출 분석(고정비)에 포함' 체크된 정기 이체·저축 거래인지 판별
+function isTxIncludedInSummaryExpense(t) {
+    if (!t) return false;
+    if (getTypeBehavior(t.type) === 'expense') return true;
+    if (typeof t.includeInExpense === 'boolean') return t.includeInExpense;
+    if (t.autoTransferId && Array.isArray(db.autoTransfers)) {
+        const at = db.autoTransfers.find(a => a.id === t.autoTransferId);
+        if (at && at.includeInExpense) return true;
+    }
+    return false;
 }
 
 function getSum3FirstRecordYM(nowYM) {
@@ -96,7 +108,7 @@ function getSpendItemsForMonth(year, month, basis) {
     if (basis === 'consume') {
         db.transactions.forEach(t => {
             if (!matchesGlobalUser(t.user)) return;
-            if (getTypeBehavior(t.type) !== 'expense') return;
+            if (!isTxIncludedInSummaryExpense(t)) return;
             if (t.date < monthStart || t.date > monthEnd) return;
             const mId = resolveToAssetId(t.method);
             items.push({
@@ -105,13 +117,13 @@ function getSpendItemsForMonth(year, month, basis) {
                 catSub: t.catSub || '',
                 methodId: mId,
                 method: getAssetLabel(mId),
-                isFixed: !!t.fromAutoTransfer
+                isFixed: !!t.fromAutoTransfer || (getTypeBehavior(t.type) !== 'expense')
             });
         });
     } else {
         db.transactions.forEach(t => {
             if (!matchesGlobalUser(t.user)) return;
-            if (getTypeBehavior(t.type) !== 'expense') return;
+            if (!isTxIncludedInSummaryExpense(t)) return;
             const mId = resolveToAssetId(t.method);
             if (creditCardIds.has(mId)) return;
             if (t.date < monthStart || t.date > monthEnd) return;
@@ -121,7 +133,7 @@ function getSpendItemsForMonth(year, month, basis) {
                 catSub: t.catSub || '',
                 methodId: mId,
                 method: getAssetLabel(mId),
-                isFixed: !!t.fromAutoTransfer
+                isFixed: !!t.fromAutoTransfer || (getTypeBehavior(t.type) !== 'expense')
             });
         });
 
@@ -322,8 +334,14 @@ function getAllExpenseCategoryTree() {
             (cats[m] || []).forEach(s => tree[m].add(s));
         });
     });
+    (db.autoTransfers || []).forEach(at => {
+        if (!at.includeInExpense) return;
+        const m = at.catMain || '미분류';
+        if (!tree[m]) tree[m] = new Set();
+        if (at.catSub) tree[m].add(at.catSub);
+    });
     db.transactions.forEach(t => {
-        if (getTypeBehavior(t.type) !== 'expense') return;
+        if (!isTxIncludedInSummaryExpense(t)) return;
         const m = t.catMain || '미분류';
         if (!tree[m]) tree[m] = new Set();
         if (t.catSub) tree[m].add(t.catSub);
@@ -356,7 +374,7 @@ function syncSum3CatTrendDropdowns(currentItems) {
     mainSel.value = sum3TrendMain;
 
     const subs = Array.from(tree[sum3TrendMain] || []);
-    const hasNoneSub = db.transactions.some(t => getTypeBehavior(t.type) === 'expense' && (t.catMain || '미분류') === sum3TrendMain && !t.catSub);
+    const hasNoneSub = db.transactions.some(t => isTxIncludedInSummaryExpense(t) && (t.catMain || '미분류') === sum3TrendMain && !t.catSub);
     let subHtml = `<option value="전체">소분류 전체 (합계)</option>` + subs.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
     if (hasNoneSub) subHtml += `<option value="__NONE__">(소분류 없음)</option>`;
     subSel.innerHTML = subHtml;

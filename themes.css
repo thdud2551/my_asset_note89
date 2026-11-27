@@ -8,48 +8,52 @@ body {
 .title-font { font-family: 'Jua', sans-serif; }
 
 /* =========================================
-   1. 파스텔 웜 (기본)
+   1. 파스텔 웜 (눈 편안한 미색 톤 + 테두리 보강)
    ========================================= */
 :root, [data-theme="pastel"] {
-    --bg-page: #F8F9FA;
-    --bg-card: #FFFFFF;
-    --bg-subtle: #F8F9FA;
-    --header-bg: linear-gradient(90deg, #FFF9DB 0%, #FFF0F3 50%, #FFF4E6 100%);
-    --header-border: #FFE8A1;
-    --title-color: #D97706;
-    --text-main: #333333;
-    --text-muted: #6B7280;
-    --border-base: #E5E7EB;
+    --bg-page: #EFECE6;
+    --bg-card: #FAF8F3;
+    --bg-subtle: #F1ECE3;
+    --bg-input: #FCFBF8;
+    --header-bg: linear-gradient(90deg, #F7EBC7 0%, #F7E1E6 50%, #F7E6D2 100%);
+    --header-border: #D9BE7A;
+    --title-color: #B45309;
+    --text-main: #2D2A26;
+    --text-muted: #5F5A52;
+    --border-base: #D5CCC0;
+    --border-strong: #C2B6A6;
 
-    --box1-bg: #FFFDF5; --box1-border: #FFE066;
-    --box2-bg: #FFF9FA; --box2-border: #FFCCD5;
-    --box3-bg: #FFF9F5; --box3-border: #FFC09F;
-    --box4-bg: #F4FAFF; --box4-border: #A5D8FF;
+    --box1-bg: #F8F3E6; --box1-border: #DEC066;
+    --box2-bg: #F8EDF0; --box2-border: #E2A8B3;
+    --box3-bg: #F8EFE8; --box3-border: #E0A884;
+    --box4-bg: #ECF3FA; --box4-border: #8EBBE3;
 
-    --btn-primary-bg: #FFD43B; --btn-primary-hover: #FCC419; --btn-primary-text: #374151;
-    --btn-pink-bg: #FF8787; --btn-pink-hover: #FA5252; --btn-pink-text: #FFFFFF;
-    --btn-orange-bg: #FF922B; --btn-orange-hover: #FD7E14; --btn-orange-text: #FFFFFF;
-    --tab-active-bg: #FBBF24; --tab-active-text: #111827;
+    --btn-primary-bg: #F6C83A; --btn-primary-hover: #E6B724; --btn-primary-text: #2D2A26;
+    --btn-pink-bg: #F07878; --btn-pink-hover: #DF6060; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #F0862A; --btn-orange-hover: #DD7218; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #F2B824; --tab-active-text: #1F1D1A;
 }
 
 /* =========================================
-   2. 모던 흑백
+   2. 모던 흑백 (눈부심 완화 그레이 톤)
    ========================================= */
 [data-theme="mono"] {
-    --bg-page: #F3F4F6;
-    --bg-card: #FFFFFF;
-    --bg-subtle: #F9FAFB;
-    --header-bg: #FFFFFF;
-    --header-border: #D1D5DB;
+    --bg-page: #E5E7EB;
+    --bg-card: #F6F7F8;
+    --bg-subtle: #EBEEF1;
+    --bg-input: #F9FAFB;
+    --header-bg: #EFF1F4;
+    --header-border: #B5BDC8;
     --title-color: #111827;
     --text-main: #1F2937;
-    --text-muted: #6B7280;
-    --border-base: #D1D5DB;
+    --text-muted: #5B6472;
+    --border-base: #C3CBD6;
+    --border-strong: #A8B2C0;
 
-    --box1-bg: #FFFFFF; --box1-border: #D1D5DB;
-    --box2-bg: #FAFAFA; --box2-border: #D1D5DB;
-    --box3-bg: #FAFAFA; --box3-border: #D1D5DB;
-    --box4-bg: #FFFFFF; --box4-border: #D1D5DB;
+    --box1-bg: #F1F3F5; --box1-border: #B5BECB;
+    --box2-bg: #F0F2F5; --box2-border: #B5BECB;
+    --box3-bg: #F0F2F5; --box3-border: #B5BECB;
+    --box4-bg: #F1F3F5; --box4-border: #B5BECB;
 
     --btn-primary-bg: #374151; --btn-primary-hover: #1F2937; --btn-primary-text: #FFFFFF;
     --btn-pink-bg: #4B5563; --btn-pink-hover: #374151; --btn-pink-text: #FFFFFF;
@@ -58,53 +62,57 @@ body {
 }
 
 /* =========================================
-   3. 세이지 그린
+   3. 세이지 그린 (눈 편안한 차분한 녹색 톤)
    ========================================= */
 [data-theme="sage"] {
-    --bg-page: #F4F7F4;
-    --bg-card: #FFFFFF;
-    --bg-subtle: #F2F6F2;
-    --header-bg: linear-gradient(90deg, #E9F3EC 0%, #F2F7F0 100%);
-    --header-border: #C3DEC9;
-    --title-color: #2F6B48;
-    --text-main: #26332B;
-    --text-muted: #5F7165;
-    --border-base: #D7E5DA;
+    --bg-page: #E3ECE5;
+    --bg-card: #F5F9F5;
+    --bg-subtle: #E9F1EA;
+    --bg-input: #F8FBF8;
+    --header-bg: linear-gradient(90deg, #D7E8DC 0%, #E3EFE6 100%);
+    --header-border: #9EC3A8;
+    --title-color: #275B3D;
+    --text-main: #233028;
+    --text-muted: #536559;
+    --border-base: #BBD1C0;
+    --border-strong: #9FBBA6;
 
-    --box1-bg: #F9FCF9; --box1-border: #B7D8C0;
-    --box2-bg: #FBFDFB; --box2-border: #CBE2D1;
-    --box3-bg: #F8FBF8; --box3-border: #C2DBC8;
-    --box4-bg: #F5FAF8; --box4-border: #B2D6CC;
+    --box1-bg: #EEF5EF; --box1-border: #9AC0A4;
+    --box2-bg: #F0F6F1; --box2-border: #A5C8AE;
+    --box3-bg: #EDF4EE; --box3-border: #9EC2A7;
+    --box4-bg: #EBF3F1; --box4-border: #90BCB1;
 
-    --btn-primary-bg: #68A67D; --btn-primary-hover: #529168; --btn-primary-text: #FFFFFF;
-    --btn-pink-bg: #7A9E89; --btn-pink-hover: #628671; --btn-pink-text: #FFFFFF;
-    --btn-orange-bg: #88A97C; --btn-orange-hover: #709364; --btn-orange-text: #FFFFFF;
-    --tab-active-bg: #5B9A72; --tab-active-text: #FFFFFF;
+    --btn-primary-bg: #5B9970; --btn-primary-hover: #48835C; --btn-primary-text: #FFFFFF;
+    --btn-pink-bg: #6D927D; --btn-pink-hover: #587B67; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #7A9B6E; --btn-orange-hover: #658659; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #4E8E65; --tab-active-text: #FFFFFF;
 }
 
 /* =========================================
-   4. 스카이 블루
+   4. 스카이 블루 (눈 편안한 차분한 하늘 톤)
    ========================================= */
 [data-theme="sky"] {
-    --bg-page: #F2F7FC;
-    --bg-card: #FFFFFF;
-    --bg-subtle: #F0F6FC;
-    --header-bg: linear-gradient(90deg, #E7F3FF 0%, #F0F7FF 100%);
-    --header-border: #BDDDFC;
-    --title-color: #2563EB;
+    --bg-page: #E2ECF6;
+    --bg-card: #F5F9FD;
+    --bg-subtle: #E8F1FA;
+    --bg-input: #F8FBFE;
+    --header-bg: linear-gradient(90deg, #D5E8FB 0%, #E2EFFC 100%);
+    --header-border: #98C2EE;
+    --title-color: #1D4ED8;
     --text-main: #1E293B;
-    --text-muted: #64748B;
-    --border-base: #D4E4F7;
+    --text-muted: #55657B;
+    --border-base: #B7CFE8;
+    --border-strong: #99B9DC;
 
-    --box1-bg: #F8FBFF; --box1-border: #B3D4FC;
-    --box2-bg: #FAFCFF; --box2-border: #C7DFFE;
-    --box3-bg: #F7FAFF; --box3-border: #BDD7F8;
-    --box4-bg: #F5FAFF; --box4-border: #A5D1FA;
+    --box1-bg: #EDF4FC; --box1-border: #90BBE8;
+    --box2-bg: #EFF5FC; --box2-border: #A0C4EC;
+    --box3-bg: #ECF3FB; --box3-border: #98BFE8;
+    --box4-bg: #EAF3FC; --box4-border: #87B8E6;
 
-    --btn-primary-bg: #60A5FA; --btn-primary-hover: #3B82F6; --btn-primary-text: #FFFFFF;
-    --btn-pink-bg: #638CEB; --btn-pink-hover: #4A74D9; --btn-pink-text: #FFFFFF;
-    --btn-orange-bg: #5FA8D3; --btn-orange-hover: #4791BE; --btn-orange-text: #FFFFFF;
-    --tab-active-bg: #3B82F6; --tab-active-text: #FFFFFF;
+    --btn-primary-bg: #4F94EC; --btn-primary-hover: #357CE0; --btn-primary-text: #FFFFFF;
+    --btn-pink-bg: #5A82DE; --btn-pink-hover: #456CC9; --btn-pink-text: #FFFFFF;
+    --btn-orange-bg: #529BC7; --btn-orange-hover: #3E85B0; --btn-orange-text: #FFFFFF;
+    --tab-active-bg: #357AE8; --tab-active-text: #FFFFFF;
 }
 
 /* =========================================
@@ -114,12 +122,14 @@ body {
     --bg-page: #181B20;
     --bg-card: #22262E;
     --bg-subtle: #2A2F3A;
+    --bg-input: #1B1F27;
     --header-bg: #1E2229;
     --header-border: #323846;
     --title-color: #F3F4F6;
     --text-main: #E5E7EB;
     --text-muted: #9CA3AF;
-    --border-base: #343B48;
+    --border-base: #353C4A;
+    --border-strong: #464F61;
 
     --box1-bg: #22262E; --box1-border: #3A4252;
     --box2-bg: #22262E; --box2-border: #3A4252;
@@ -153,17 +163,99 @@ body {
 }
 
 /* =========================================
-   소프트 다크 테마 세부 보정
+   밝은 4개 테마 공통 눈 편안함 · 테두리 보강
    ========================================= */
-[data-theme="dark"] .bg-white { background-color: #22262E !important; color: #E5E7EB; }
-[data-theme="dark"] .bg-gray-50,
-[data-theme="dark"] .bg-gray-100 { background-color: #2B303B !important; color: #D1D5DB; }
+[data-theme="pastel"] .bg-white,
+[data-theme="mono"] .bg-white,
+[data-theme="sage"] .bg-white,
+[data-theme="sky"] .bg-white,
+[data-theme="pastel"] .bg-white\/80,
+[data-theme="mono"] .bg-white\/80,
+[data-theme="sage"] .bg-white\/80,
+[data-theme="sky"] .bg-white\/80 {
+    background-color: var(--bg-card) !important;
+}
 
-/* 큰 영역(패널·테이블 헤더)은 다크 톤 유지 */
-[data-theme="dark"] .bg-amber-50, [data-theme="dark"] .bg-amber-50\/50, [data-theme="dark"] .bg-amber-50\/60,
-[data-theme="dark"] .bg-pink-50, [data-theme="dark"] .bg-pink-50\/40, [data-theme="dark"] .bg-pink-50\/50,
-[data-theme="dark"] .bg-blue-50, [data-theme="dark"] .bg-blue-50\/60,
-[data-theme="dark"] .bg-purple-50, [data-theme="dark"] .bg-purple-50\/70,
+[data-theme="pastel"] .bg-gray-50,
+[data-theme="mono"] .bg-gray-50,
+[data-theme="sage"] .bg-gray-50,
+[data-theme="sky"] .bg-gray-50,
+[data-theme="pastel"] .bg-gray-50\/80,
+[data-theme="mono"] .bg-gray-50\/80,
+[data-theme="sage"] .bg-gray-50\/80,
+[data-theme="sky"] .bg-gray-50\/80,
+[data-theme="pastel"] .bg-gray-50\/90,
+[data-theme="mono"] .bg-gray-50\/90,
+[data-theme="sage"] .bg-gray-50\/90,
+[data-theme="sky"] .bg-gray-50\/90 {
+    background-color: var(--bg-subtle) !important;
+}
+
+[data-theme="pastel"] .border-gray-100,
+[data-theme="mono"] .border-gray-100,
+[data-theme="sage"] .border-gray-100,
+[data-theme="sky"] .border-gray-100,
+[data-theme="pastel"] .border-gray-200,
+[data-theme="mono"] .border-gray-200,
+[data-theme="sage"] .border-gray-200,
+[data-theme="sky"] .border-gray-200 {
+    border-color: var(--border-base) !important;
+}
+
+[data-theme="pastel"] .border-gray-300,
+[data-theme="mono"] .border-gray-300,
+[data-theme="sage"] .border-gray-300,
+[data-theme="sky"] .border-gray-300 {
+    border-color: var(--border-strong) !important;
+}
+
+[data-theme="pastel"] input, [data-theme="pastel"] select,
+[data-theme="mono"] input, [data-theme="mono"] select,
+[data-theme="sage"] input, [data-theme="sage"] select,
+[data-theme="sky"] input, [data-theme="sky"] select {
+    background-color: var(--bg-input);
+    border-color: var(--border-strong);
+}
+
+/* =========================================
+   소프트 다크 테마 세부 보정 (반영완료 · 반투명 박스 가독성 포함)
+   ========================================= */
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-white\/80 {
+    background-color: #22262E !important;
+    color: #E5E7EB;
+}
+[data-theme="dark"] .bg-gray-50,
+[data-theme="dark"] .bg-gray-50\/80,
+[data-theme="dark"] .bg-gray-50\/90,
+[data-theme="dark"] .bg-gray-100 {
+    background-color: #2B313D !important;
+    color: #E5E7EB !important;
+}
+
+/* 정기지출 반영완료 카드 · 헤더 다크모드 전용 고대비 스타일 */
+[data-theme="dark"] .at-applied-header {
+    background-color: #28303D !important;
+    border-color: #414B5E !important;
+    color: #F3F4F6 !important;
+}
+[data-theme="dark"] .at-applied-card {
+    background-color: #1F242D !important;
+    border-color: #3D4658 !important;
+    color: #E5E7EB !important;
+    opacity: 1 !important;
+}
+[data-theme="dark"] .at-applied-card .text-gray-800 { color: #F3F4F6 !important; }
+[data-theme="dark"] .at-applied-card .text-gray-500 { color: #B5BDC9 !important; }
+
+/* 큰 영역(패널 · 테이블 헤더 · 반투명 보조박스) 다크 톤 유지 */
+[data-theme="dark"] .bg-amber-50, [data-theme="dark"] .bg-amber-50\/40, [data-theme="dark"] .bg-amber-50\/50, [data-theme="dark"] .bg-amber-50\/60, [data-theme="dark"] .bg-amber-50\/70,
+[data-theme="dark"] .bg-pink-50, [data-theme="dark"] .bg-pink-50\/30, [data-theme="dark"] .bg-pink-50\/40, [data-theme="dark"] .bg-pink-50\/50, [data-theme="dark"] .bg-pink-50\/60,
+[data-theme="dark"] .bg-blue-50, [data-theme="dark"] .bg-blue-50\/20, [data-theme="dark"] .bg-blue-50\/30, [data-theme="dark"] .bg-blue-50\/40, [data-theme="dark"] .bg-blue-50\/50, [data-theme="dark"] .bg-blue-50\/60, [data-theme="dark"] .bg-blue-50\/70,
+[data-theme="dark"] .bg-purple-50, [data-theme="dark"] .bg-purple-50\/50, [data-theme="dark"] .bg-purple-50\/60, [data-theme="dark"] .bg-purple-50\/70,
+[data-theme="dark"] .bg-orange-50, [data-theme="dark"] .bg-orange-50\/70,
+[data-theme="dark"] .bg-green-50, [data-theme="dark"] .bg-green-50\/50, [data-theme="dark"] .bg-green-50\/70,
+[data-theme="dark"] .bg-rose-50, [data-theme="dark"] .bg-rose-50\/70,
 [data-theme="dark"] .bg-red-50 {
     background-color: #282E3A !important;
 }
@@ -178,31 +270,42 @@ body {
 [data-theme="dark"] .text-blue-900, [data-theme="dark"] .text-orange-900,
 [data-theme="dark"] .text-purple-900 { color: #F3F4F6 !important; }
 [data-theme="dark"] .text-gray-700, [data-theme="dark"] .text-gray-600 { color: #D1D5DB !important; }
-[data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-400 { color: #9CA3AF !important; }
+[data-theme="dark"] .text-gray-500, [data-theme="dark"] .text-gray-400 { color: #A6AEBC !important; }
+
 [data-theme="dark"] .border-gray-100, [data-theme="dark"] .border-gray-200, [data-theme="dark"] .border-gray-300,
 [data-theme="dark"] .border-amber-100, [data-theme="dark"] .border-amber-200,
 [data-theme="dark"] .border-pink-100, [data-theme="dark"] .border-pink-200,
 [data-theme="dark"] .border-blue-100, [data-theme="dark"] .border-blue-200,
-[data-theme="dark"] .border-purple-200, [data-theme="dark"] .border-orange-200 {
-    border-color: #353C4A !important;
+[data-theme="dark"] .border-purple-100, [data-theme="dark"] .border-purple-200,
+[data-theme="dark"] .border-orange-100, [data-theme="dark"] .border-orange-200, [data-theme="dark"] .border-orange-200\/70,
+[data-theme="dark"] .border-green-100, [data-theme="dark"] .border-green-200,
+[data-theme="dark"] .border-rose-200, [data-theme="dark"] .border-red-200 {
+    border-color: #3B4354 !important;
 }
+
 [data-theme="dark"] input, [data-theme="dark"] select {
     background-color: #1B1F27 !important;
     color: #F3F4F6 !important;
-    border-color: #41495A !important;
+    border-color: #464F61 !important;
 }
-[data-theme="dark"] .text-blue-600 { color: #7CB7FF !important; }
-[data-theme="dark"] .text-rose-500, [data-theme="dark"] .text-rose-600 { color: #FF8796 !important; }
-[data-theme="dark"] .text-purple-600 { color: #C09BFF !important; }
 
-/* 다크 모드 보조 버튼(오늘, 이번 달, 삭제 등) 가독성 보정 */
+[data-theme="dark"] .text-blue-600, [data-theme="dark"] .text-blue-700, [data-theme="dark"] .text-blue-800 { color: #8AC0FF !important; }
+[data-theme="dark"] .text-rose-500, [data-theme="dark"] .text-rose-600, [data-theme="dark"] .text-red-600 { color: #FF8A99 !important; }
+[data-theme="dark"] .text-purple-600, [data-theme="dark"] .text-purple-700, [data-theme="dark"] .text-purple-800 { color: #C9A6FF !important; }
+[data-theme="dark"] .text-green-600, [data-theme="dark"] .text-green-700, [data-theme="dark"] .text-green-800 { color: #86EFAC !important; }
+[data-theme="dark"] .text-orange-600, [data-theme="dark"] .text-orange-700, [data-theme="dark"] .text-orange-800 { color: #FDBA74 !important; }
+[data-theme="dark"] .text-pink-700, [data-theme="dark"] .text-pink-800 { color: #F9A8D4 !important; }
+[data-theme="dark"] .text-amber-700, [data-theme="dark"] .text-amber-800 { color: #FCD34D !important; }
+
+/* 다크 모드 보조 버튼 가독성 보정 */
 [data-theme="dark"] button.bg-amber-50,
 [data-theme="dark"] button.bg-amber-100 { color: #FDE68A !important; }
-[data-theme="dark"] button.bg-pink-50 { color: #FBCFE8 !important; }
+[data-theme="dark"] button.bg-pink-50,
+[data-theme="dark"] button.bg-pink-100 { color: #FBCFE8 !important; }
 [data-theme="dark"] button.bg-red-50 { color: #FCA5A5 !important; }
 [data-theme="dark"] button.bg-gray-100 { color: #E5E7EB !important; }
 
-/* 다크 모드 배지(수입형, 지출형, 이체형, 합계, 카드구분, 기념일 등) 밝은 바탕 + 고대비 글씨 */
+/* 다크 모드 배지(수입형, 지출형, 반영완료, 카드구분, 기념일 등) 밝은 바탕 + 고대비 글씨 */
 [data-theme="dark"] span.bg-rose-50,
 [data-theme="dark"] span.bg-rose-100 {
     background-color: #FFF1F2 !important;
@@ -241,6 +344,11 @@ body {
     color: #15803D !important;
     border-color: #BBF7D0 !important;
 }
+[data-theme="dark"] span.bg-emerald-50 {
+    background-color: #ECFDF5 !important;
+    color: #047857 !important;
+    border-color: #A7F3D0 !important;
+}
 [data-theme="dark"] span.bg-orange-50,
 [data-theme="dark"] span.bg-orange-100 {
     background-color: #FFF7ED !important;
@@ -249,9 +357,10 @@ body {
 }
 [data-theme="dark"] span.bg-gray-100,
 [data-theme="dark"] span.bg-gray-200 {
-    background-color: #F3F4F6 !important;
-    color: #374151 !important;
+    background-color: #E5E7EB !important;
+    color: #1F2937 !important;
 }
+
 /* ========================================================= */
 /* 모바일 화면 최적화 (640px 이하) */
 /* ========================================================= */
@@ -288,6 +397,7 @@ body {
         font-size: 8px !important;
     }
 }
+
 /* 아이폰(iOS) 날짜·월 입력칸 크기 맞춤 및 왼쪽 가운데 정렬 */
 input[type="date"],
 input[type="month"] {
