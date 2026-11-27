@@ -91,12 +91,10 @@ function getAssetTypeRank(type) {
     return idx >= 0 ? idx : 99;
 }
 
-// 가나다순 -> 같은 이름이면 소유자순
 function sortAssetsByName(list) {
     return [...list].sort((a, b) => compareKorean(a.name, b.name) || (getOwnerRank(a.owner) - getOwnerRank(b.owner)));
 }
 
-// 소유자순 -> 종류순 -> 자산명(가나다)순
 function sortAssetsByOwnerTypeName(list) {
     return [...list].sort((a, b) =>
         (getOwnerRank(a.owner) - getOwnerRank(b.owner)) ||
@@ -109,7 +107,6 @@ function sortAssetsByOwnerThenName(list) {
     return sortAssetsByOwnerTypeName(list);
 }
 
-// 선택한 사용자 우선 -> 공동 -> 타인, 같은 그룹 내 종류별 + 가나다순
 function sortAssetsForUser(list, targetUser) {
     const uRank = (a) => {
         if (targetUser && a.owner === targetUser) return 0;
@@ -207,7 +204,7 @@ migrateDbData();
 // =========================================================
 // 상단 사용자 멀티 선택 필터 (전체 / 1명 / 복수 선택)
 // =========================================================
-let selectedGlobalUsers = null; // null이면 전체 선택
+let selectedGlobalUsers = null;
 
 function isAllGlobalUsersSelected() {
     if (selectedGlobalUsers === null) return true;
@@ -670,6 +667,7 @@ let selectedDateStr = formatYMD(todayObj), txViewMode = 'calendar';
 let cfYear = todayObj.getFullYear(), cfMonth = todayObj.getMonth() + 1;
 let cfSelectedDate = formatYMD(todayObj), cfAccountFilter = '전체', cfViewMode = 'calendar';
 let cfHideZeroCards = true;
+let cfCardListMobileOpen = false;
 let selectedCatType = db.txTypes[0] ? db.txTypes[0].name : '지출';
 let selectedMainCat = '';
 let settingsAssetExpanded = {};
@@ -785,7 +783,7 @@ function renderAll() {
 }
 
 // =========================================================
-// [1. 가계부] 로직 (할부 결제일 기준 월 분할 표시 · 모바일 카드 리스트 뷰)
+// [1. 가계부] 로직 (할부 결제일 기준 월 분할 · PC 5열 압축 · 모바일 카드 뷰)
 // =========================================================
 function getExpandedTxEntriesForRange(startStr, endStr) {
     const entries = [];
@@ -1263,12 +1261,12 @@ function renderListView(passedEntries) {
     const cardList = document.getElementById('transactionCardList');
 
     if (entries.length === 0) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-gray-400">조건에 맞는 내역이 없습니다.</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="py-10 text-center text-gray-400">조건에 맞는 내역이 없습니다.</td></tr>`;
         if (cardList) cardList.innerHTML = `<div class="bg-gray-50 p-8 rounded-2xl border border-gray-200 text-center text-xs text-gray-400">조건에 맞는 내역이 없습니다.</div>`;
         return;
     }
 
-    // 1. PC 표 형태 렌더링
+    // 1. PC 5열 압축 표 렌더링 (날짜/사용자 · 분류/수단 · 내용 · 금액 · 관리)
     if (tbody) {
         tbody.innerHTML = entries.map(t => {
             const b = getTypeBehavior(t.type), isTr = (b === 'transfer' || b === 'voucher');
@@ -1282,17 +1280,16 @@ function renderListView(passedEntries) {
             const incBadge = isIncTransfer ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-bold mr-1 whitespace-nowrap">고정비</span>` : '';
             const shortDate = t.displayDate ? t.displayDate.slice(2).replace(/-/g, '.') : '';
 
-            const catHtml = `
-                <div class="flex items-center gap-1 whitespace-nowrap">
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold">${escHtml(t.type)}</span>
-                    <span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>
-                </div>
-                ${t.catSub ? `<div class="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">${escHtml(t.catSub)}</div>` : ''}`;
+            const methodText = isTr
+                ? `${getAssetLabel(t.method)} → ${getAssetLabel(t.targetAsset)}`
+                : getAssetLabel(t.method);
 
-            const methodHtml = isTr
-                ? `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>
-                   <div class="text-[10px] text-purple-600 whitespace-nowrap">→ ${escHtml(getAssetLabel(t.targetAsset))}</div>`
-                : `<div class="text-gray-600 whitespace-nowrap">${escHtml(getAssetLabel(t.method))}</div>`;
+            const catMethodHtml = `
+                <div class="flex items-center gap-1 flex-wrap">
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-bold shrink-0">${escHtml(t.type)}</span>
+                    <span class="font-bold text-gray-800">${escHtml(t.catMain)}</span>${t.catSub ? `<span class="text-gray-400">/${escHtml(t.catSub)}</span>` : ''}
+                </div>
+                <div class="text-[10px] ${isTr ? 'text-purple-600' : 'text-gray-500'} mt-0.5 truncate max-w-[180px]" title="${escHtml(methodText)}">${escHtml(methodText)}</div>`;
 
             const instHint = t.isInstallmentSlice
                 ? `<div class="text-[10px] text-gray-400 mt-0.5">총 ${t.totalAmount.toLocaleString()}원${t.instIndex > 1 ? ` · 원결제 ${t.originalDate.slice(2).replace(/-/g, '.')}` : ''}</div>`
@@ -1300,16 +1297,17 @@ function renderListView(passedEntries) {
 
             return `
                 <tr class="hover:bg-amber-50/40 align-middle">
-                    <td class="py-2.5 px-2.5 text-gray-500 whitespace-nowrap text-[11px]" title="${escHtml(t.displayDate)}">${shortDate}</td>
-                    <td class="py-2.5 px-2.5 font-bold text-gray-700 whitespace-nowrap">${escHtml(t.user)}</td>
-                    <td class="py-2.5 px-2.5">${catHtml}</td>
-                    <td class="py-2.5 px-2.5 text-gray-800 min-w-[160px] sm:min-w-[210px] leading-snug break-words">
+                    <td class="py-2.5 px-2.5 whitespace-nowrap">
+                        <div class="text-[11px] text-gray-500" title="${escHtml(t.displayDate)}">${shortDate}</div>
+                        <div class="mt-0.5">${getOwnerBadgeHtml(t.user)}</div>
+                    </td>
+                    <td class="py-2.5 px-2.5 leading-snug">${catMethodHtml}</td>
+                    <td class="py-2.5 px-2.5 text-gray-800 leading-snug break-words">
                         <div>${autoBadge}${incBadge}${instBadge}${escHtml(t.memo)}</div>
                         ${instHint}
                     </td>
-                    <td class="py-2.5 px-2.5 text-[11px] leading-snug">${methodHtml}</td>
                     <td class="py-2.5 px-2.5 text-right font-bold whitespace-nowrap ${amtColor}">${sign}${Number(t.displayAmount).toLocaleString()}원</td>
-                    <td class="py-2.5 px-2.5 text-center whitespace-nowrap space-x-1">
+                    <td class="py-2.5 px-2 text-center whitespace-nowrap space-x-1">
                         <button onclick="startEditTx('${t.id}')" class="px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 font-bold">수정</button>
                         <button onclick="deleteTx('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">삭제</button>
                     </td>
@@ -1363,7 +1361,7 @@ function renderListView(passedEntries) {
 }
 
 // =========================================================
-// [2. 결제·출금] 로직 (신용카드 전체 합계 · 결제 대금 정산 용어 통일)
+// [2. 결제·출금] 로직 (모바일 카드목록 접기 · 모바일 카드형 리스트 · 결제 대금 정산)
 // =========================================================
 function getCardBillingPeriod(card, billY, billM) {
     const offsetMap = { '전전월': -2, '전월': -1, '당월': 0 };
@@ -1526,6 +1524,36 @@ function toggleCfHideZeroCards(checked) {
     renderCfCardBillingBoxes();
 }
 
+function updateCfCardListMobileUI(visibleCount) {
+    const grid = document.getElementById('cfCardBillingGrid');
+    const btn = document.getElementById('cfCardListToggleBtn');
+    const label = document.getElementById('cfCardListToggleLabel');
+    const icon = document.getElementById('cfCardListToggleIcon');
+    if (!grid) return;
+
+    if (cfCardListMobileOpen) {
+        grid.classList.remove('hidden');
+        grid.classList.add('block');
+    } else {
+        grid.classList.add('hidden');
+        grid.classList.remove('block');
+    }
+
+    const cnt = (typeof visibleCount === 'number')
+        ? visibleCount
+        : (btn && btn.dataset.count !== undefined ? Number(btn.dataset.count) : null);
+    const countText = cnt !== null ? ` (${cnt}장)` : '';
+
+    if (label) label.textContent = cfCardListMobileOpen ? `카드별 목록 접기${countText}` : `카드별 목록 펼치기${countText}`;
+    if (icon) icon.textContent = cfCardListMobileOpen ? '▲' : '▼';
+    if (btn && typeof visibleCount === 'number') btn.dataset.count = String(visibleCount);
+}
+
+function toggleCfCardListMobile() {
+    cfCardListMobileOpen = !cfCardListMobileOpen;
+    updateCfCardListMobileUI();
+}
+
 function renderCfCardBillingBoxes() {
     const grid = document.getElementById('cfCardBillingGrid');
     const summaryEl = document.getElementById('cfCardTotalSummary');
@@ -1539,7 +1567,6 @@ function renderCfCardBillingBoxes() {
 
     const bills = allCards.map(c => computeCardBillForMonth(c, cfYear, cfMonth, false));
 
-    // 신용카드 전체 합계 계산
     let totalRemaining = 0, totalSettled = 0, totalPrepaid = 0, totalGross = 0;
     let pendingCardCount = 0, settledCardCount = 0;
     bills.forEach(b => {
@@ -1583,6 +1610,8 @@ function renderCfCardBillingBoxes() {
 
     const hintEl = document.getElementById('cfHiddenZeroCount');
     if (hintEl) hintEl.textContent = hiddenCount > 0 ? `(0원 ${hiddenCount}장 숨김)` : '';
+
+    updateCfCardListMobileUI(visibleBills.length);
 
     if (allCards.length === 0) {
         grid.innerHTML = `<div class="bg-white p-6 rounded-2xl border border-pink-100 text-center text-xs text-gray-400">해당 사용자의 신용카드가 없습니다.</div>`;
@@ -1981,20 +2010,62 @@ function renderCfListView(passedEntries) {
     if (keyword) filtered = filtered.filter(e => [e.account, e.title, e.sub].some(v => (v || '').toLowerCase().includes(keyword)));
 
     const tbody = document.getElementById('cfListTableBody');
-    if (filtered.length === 0) { tbody.innerHTML = `<tr><td colspan="6" class="py-10 text-center text-gray-400">조건에 맞는 입출금 내역이 없습니다.</td></tr>`; return; }
-    tbody.innerHTML = filtered.map(e => {
-        const badge = e.kind === 'in' ? `<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">입금</span>` : (e.kind === 'out' ? `<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold text-[10px]">출금</span>` : `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-[10px]">예정</span>`);
-        const amtColor = e.kind === 'in' ? 'text-blue-600' : (e.kind === 'out' ? 'text-rose-500' : 'text-orange-500');
-        return `
-            <tr class="hover:bg-pink-50/30">
-                <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap">${e.date}</td>
-                <td class="py-2.5 px-3 whitespace-nowrap">${badge}</td>
-                <td class="py-2.5 px-3 font-bold text-gray-700 whitespace-nowrap">${escHtml(e.account)}</td>
-                <td class="py-2.5 px-3 text-gray-800 min-w-[160px] leading-snug">${escHtml(e.title)} <span class="text-[10px] text-gray-400 ml-1">${escHtml(e.sub)}</span></td>
-                <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${amtColor}">${e.kind === 'in' ? '+' : '-'}${e.amount.toLocaleString()}원</td>
-                <td class="py-2.5 px-3 text-center whitespace-nowrap">${e.sourceType === 'cardEvent' ? `<button onclick="cancelCardEvent('${e.eventId}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">취소</button>` : '<span class="text-gray-300">-</span>'}</td>
-            </tr>`;
-    }).join('');
+    const cardList = document.getElementById('cfListCardContainer');
+
+    if (filtered.length === 0) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="py-10 text-center text-gray-400">조건에 맞는 입출금 내역이 없습니다.</td></tr>`;
+        if (cardList) cardList.innerHTML = `<div class="bg-gray-50 p-8 rounded-2xl border border-gray-200 text-center text-xs text-gray-400">조건에 맞는 입출금 내역이 없습니다.</div>`;
+        return;
+    }
+
+    // 1. PC 표 형태 렌더링
+    if (tbody) {
+        tbody.innerHTML = filtered.map(e => {
+            const badge = e.kind === 'in' ? `<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px]">입금</span>` : (e.kind === 'out' ? `<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold text-[10px]">출금</span>` : `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-[10px]">예정</span>`);
+            const amtColor = e.kind === 'in' ? 'text-blue-600' : (e.kind === 'out' ? 'text-rose-500' : 'text-orange-500');
+            return `
+                <tr class="hover:bg-pink-50/30">
+                    <td class="py-2.5 px-3 text-gray-500 whitespace-nowrap">${e.date}</td>
+                    <td class="py-2.5 px-3 whitespace-nowrap">${badge}</td>
+                    <td class="py-2.5 px-3 font-bold text-gray-700 whitespace-nowrap">${escHtml(e.account)}</td>
+                    <td class="py-2.5 px-3 text-gray-800 min-w-[160px] leading-snug">${escHtml(e.title)} <span class="text-[10px] text-gray-400 ml-1">${escHtml(e.sub)}</span></td>
+                    <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap ${amtColor}">${e.kind === 'in' ? '+' : '-'}${e.amount.toLocaleString()}원</td>
+                    <td class="py-2.5 px-3 text-center whitespace-nowrap">${e.sourceType === 'cardEvent' ? `<button onclick="cancelCardEvent('${e.eventId}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 rounded text-red-600 font-bold">취소</button>` : '<span class="text-gray-300">-</span>'}</td>
+                </tr>`;
+        }).join('');
+    }
+
+    // 2. 모바일 카드형 리스트 렌더링
+    if (cardList) {
+        cardList.innerHTML = filtered.map(e => {
+            const badge = e.kind === 'in'
+                ? `<span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[10px] whitespace-nowrap">입금</span>`
+                : (e.kind === 'out'
+                    ? `<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-bold text-[10px] whitespace-nowrap">출금</span>`
+                    : `<span class="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-bold text-[10px] whitespace-nowrap">예정</span>`);
+            const amtColor = e.kind === 'in' ? 'text-blue-600' : (e.kind === 'out' ? 'text-rose-500' : 'text-orange-500');
+            const shortDate = e.date ? e.date.slice(2).replace(/-/g, '.') : '';
+
+            return `
+                <div class="bg-white p-3 rounded-2xl border border-pink-100 space-y-1.5 text-xs">
+                    <div class="flex justify-between items-center gap-2">
+                        <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <span class="text-[11px] font-bold text-gray-500 whitespace-nowrap">${shortDate}</span>
+                            ${badge}
+                            <span class="font-bold text-gray-700 truncate">${escHtml(e.account)}</span>
+                        </div>
+                        <span class="font-bold text-sm shrink-0 whitespace-nowrap ${amtColor}">${e.kind === 'in' ? '+' : '-'}${e.amount.toLocaleString()}원</span>
+                    </div>
+                    <div class="text-sm font-bold text-gray-800 leading-snug break-words">${escHtml(e.title)}</div>
+                    <div class="flex justify-between items-center gap-2 pt-1.5 border-t border-gray-100">
+                        <span class="text-[11px] text-gray-500 truncate">${escHtml(e.sub)}</span>
+                        ${e.sourceType === 'cardEvent'
+                            ? `<button onclick="cancelCardEvent('${e.eventId}')" class="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-[11px] shrink-0">취소</button>`
+                            : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
 }
 
 function openCustomModal(html) {
