@@ -1,5 +1,5 @@
 // =========================================================
-// [3. 정기 지출] 전용 모듈 (미반영/반영완료 · 사용자별 아코디언 · 할부 바로 변경 · 고정비 포함 이체)
+// [3. 정기 지출] 전용 모듈 (미반영/반영완료 · 할부 월분할/자동표시 · 사용자별 아코디언 · 고정비 포함 이체)
 // =========================================================
 let atYear = todayObj.getFullYear();
 let atMonth = todayObj.getMonth() + 1;
@@ -23,6 +23,16 @@ function compareAutoTransferItems(a, b) {
         compareKorean(a.catSub || '', b.catSub || '') ||
         compareKorean(a.name || '', b.name || '')
     );
+}
+
+// 할부 회차별 월 금액 계산 (가계부·지출분석과 동일한 1회차 잔여원금 합산 방식)
+function getAtInstallmentSliceAmount(totalAmount, months, instIndex = 1) {
+    const total = Number(totalAmount) || 0;
+    const m = Number(months) || 1;
+    if (m <= 1) return total;
+    const base = Math.floor(total / m);
+    const rem = total - (base * m);
+    return instIndex === 1 ? (base + rem) : base;
 }
 
 function adjustToNextBusinessDay(dateStr) {
@@ -80,6 +90,45 @@ function getExpectedAmountForAutoItem(at, year, month) {
     return { amount: Number(at.amount) || 0, source: 'fixed' };
 }
 
+// 정기 지출에서 할부로 반영된 항목의 2회차~N회차 자동 표시 목록 (결제일 기준)
+function getAutoInstallmentFollowupsForMonth(year, month, excludeTxIds) {
+    const list = [];
+    (db.transactions || []).forEach(t => {
+        if (!t.fromAutoTransfer && !t.autoTransferId) return;
+        if (!matchesGlobalUser(t.user)) return;
+        if (getTypeBehavior(t.type) !== 'expense') return;
+        if (!t.date || t.date.length < 10) return;
+
+        const months = Number(t.installmentMonths) || 1;
+        if (months <= 1) return;
+        if (excludeTxIds && excludeTxIds.has(t.id)) return;
+
+        const [txY, txM, txD] = t.date.split('-').map(Number);
+        const diff = (year - txY) * 12 + (month - txM);
+        if (diff >= 1 && diff < months) {
+            const idx = diff + 1;
+            const totalAmount = Number(t.amount) || 0;
+            list.push({
+                tx: t,
+                instIndex: idx,
+                instMonths: months,
+                totalAmount,
+                displayAmount: getAtInstallmentSliceAmount(totalAmount, months, idx),
+                displayDate: makeClampedDate(txY, txM, diff, txD),
+                originalDate: t.date,
+                sortKey: {
+                    user: t.user,
+                    type: t.type,
+                    catMain: t.catMain || '',
+                    catSub: t.catSub || '',
+                    name: t.memo || ''
+                }
+            });
+        }
+    });
+    return list.sort((a, b) => compareAutoTransferItems(a.sortKey, b.sortKey));
+}
+
 function getSpecificPendingAutoItemsForMonth(year, month) {
     const ym = formatYM(year, month);
     const list = [];
@@ -104,13 +153,19 @@ function getSpecificPendingAutoItemsForMonth(year, month) {
 }
 
 function getMonthlyFixedExpenseHint() {
-    const nowYM = formatYM(todayObj.getFullYear(), todayObj.getMonth() + 1);
+    const nowY = todayObj.getFullYear();
+    const nowM = todayObj.getMonth() + 1;
+    const nowYM = formatYM(nowY, nowM);
     return (db.autoTransfers || [])
         .filter(at => at.active !== false && at.cycleType !== 'specific' && (getTypeBehavior(at.type) === 'expense' || !!at.includeInExpense))
         .filter(at => (!at.startYM || nowYM >= at.startYM) && (!at.endYM || nowYM <= at.endYM))
         .reduce((s, at) => {
-            const exp = getExpectedAmountForAutoItem(at, todayObj.getFullYear(), todayObj.getMonth() + 1);
-            return s + (exp.amount || 0);
+            const exp = getExpectedAmountForAutoItem(at, nowY, nowM);
+            const rawAmt = exp.amount || 0;
+            const asset = findAsset(at.method);
+            const isCredit = getTypeBehavior(at.type) === 'expense' && asset && asset.type === '신용카드';
+            const instM = isCredit ? (Number(at.installmentMonths) || 1) : 1;
+            return s + getAtInstallmentSliceAmount(rawAmt, instM, 1);
         }, 0);
 }
 
@@ -195,25 +250,52 @@ function renderTab4() {
         const sched = getScheduledDateForAutoItem(at, atYear, atMonth);
         const applied = findAppliedTxForAutoItem(at.id, ym);
         const exp = getExpectedAmountForAutoItem(at, atYear, atMonth);
-        return { at, sched, applied, exp };
+        const b = getTypeBehavior(at.type);
+        const asset = findAsset(at.method);
+        const isCredit = (b === 'expense' && asset && asset.type === '신용카드');
+
+        let displayAmount = 0;
+        let totalAmount = 0;
+        let instMonths = 1;
+
+        if (applied) {
+            totalAmount = Number(applied.amount) || 0;
+            instMonths = (b === 'expense') ? (Number(applied.installmentMonths) || 1) : 1;
+            displayAmount = getAtInstallmentSliceAmount(totalAmount, instMonths, 1);
+        } else {
+            totalAmount = exp.amount || 0;
+            instMonths = isCredit ? (Number(at.installmentMonths) || 1) : 1;
+            displayAmount = totalAmount > 0 ? getAtInstallmentSliceAmount(totalAmount, instMonths, 1) : 0;
+        }
+
+        return { at, sched, applied, exp, displayAmount, totalAmount, instMonths };
     }).sort((a, b) => compareAutoTransferItems(a.at, b.at));
 
+    const appliedTxIds = new Set(dueItems.filter(x => x.applied).map(x => x.applied.id));
+    const instFollowups = getAutoInstallmentFollowupsForMonth(atYear, atMonth, appliedTxIds);
+
     let sumFixedExp = 0, sumTransfer = 0, sumIncludedTransfer = 0, doneCount = 0;
-    dueItems.forEach(({ at, applied, exp }) => {
+    dueItems.forEach(({ at, applied, displayAmount }) => {
         const b = getTypeBehavior(at.type);
-        const amt = applied ? Number(applied.amount) : (exp.amount || 0);
         if (b === 'expense') {
-            sumFixedExp += amt;
+            sumFixedExp += displayAmount;
         } else if (b === 'transfer' || b === 'voucher') {
-            sumTransfer += amt;
+            sumTransfer += displayAmount;
             if (at.includeInExpense) {
-                sumFixedExp += amt;
-                sumIncludedTransfer += amt;
+                sumFixedExp += displayAmount;
+                sumIncludedTransfer += displayAmount;
             }
         }
         if (applied) doneCount++;
     });
 
+    // 2회차~N회차 정기 할부 자동 표시 항목도 월 고정비 및 완료 건수에 포함
+    instFollowups.forEach(it => {
+        sumFixedExp += it.displayAmount;
+        doneCount++;
+    });
+
+    const totalItemCount = dueItems.length + instFollowups.length;
     const annualSpec = getAnnualSpecificExpenseTotal(atYear);
     document.getElementById('atSumExpense').textContent = `${sumFixedExp.toLocaleString()}원`;
     const hintParts = [];
@@ -222,10 +304,10 @@ function renderTab4() {
     document.getElementById('atSumAnnualHint').textContent = hintParts.length > 0 ? hintParts.join(' · ') : '등록된 연간 세금·보험 없음';
 
     document.getElementById('atSumTransfer').textContent = `${sumTransfer.toLocaleString()}원`;
-    document.getElementById('atSumStatus').textContent = `${doneCount} / ${dueItems.length}건 완료`;
-    document.getElementById('atSumStatusSub').textContent = dueItems.length > doneCount
-        ? `반영 대기 ${dueItems.length - doneCount}건`
-        : (dueItems.length > 0 ? '이번 달 모든 항목 반영 완료' : '이번 달 예정 항목 없음');
+    document.getElementById('atSumStatus').textContent = `${doneCount} / ${totalItemCount}건 완료`;
+    document.getElementById('atSumStatusSub').textContent = totalItemCount > doneCount
+        ? `반영 대기 ${totalItemCount - doneCount}건`
+        : (totalItemCount > 0 ? '이번 달 모든 항목 반영 완료' : '이번 달 예정 항목 없음');
 
     const endingItems = (db.autoTransfers || []).filter(at => {
         if (at.active === false || !at.endYM) return false;
@@ -244,7 +326,7 @@ function renderTab4() {
         alertBox.classList.add('hidden');
     }
 
-    renderAtMonthlyExecutionList(dueItems, ym);
+    renderAtMonthlyExecutionList(dueItems, instFollowups, ym);
     syncAtFormOptions();
     renderAtMasterList();
 }
@@ -264,7 +346,7 @@ function buildAtItemBadgesHtml(at, sched, applied, exp, ym) {
         sched.shifted ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold">영업일 보정</span>` : '',
         (!applied && exp.source === 'prevYear') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">전년 동월 기준</span>` : '',
         (!applied && exp.source === 'blank') ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">변동 · 직접 입력</span>` : '',
-        (applied && appliedInst > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${appliedInst}개월 할부</span>` : '',
+        (applied && appliedInst > 1) ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">1/${appliedInst}회차</span>` : '',
         isEndingThisMonth ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">이번 달 종료</span>` : ''
     ].filter(Boolean).join(' ');
 }
@@ -281,17 +363,31 @@ function buildAtExecInstSelectHtml(at) {
     return `<select id="atExecInst_${at.id}" title="신용카드 할부 개월 수" class="p-1.5 bg-pink-50/50 border border-pink-200 rounded-xl text-xs font-bold text-pink-900">${opts}</select>`;
 }
 
-function renderAtMonthlyExecutionList(dueItems, ym) {
+function renderAtMonthlyExecutionList(dueItems, instFollowups, ym) {
     const container = document.getElementById('atExecutionList');
     const selectAllWrap = document.getElementById('atSelectAllWrap');
     const pendingItems = dueItems.filter(x => !x.applied);
-    const appliedItems = dueItems.filter(x => !!x.applied);
+    const appliedDueItems = dueItems.filter(x => !!x.applied);
+
+    // 1회차 반영 완료 항목 + 2~N회차 할부 자동표시 항목 통합 정렬
+    const appliedEntries = [
+        ...appliedDueItems.map(item => ({
+            isFollowup: false,
+            sortKey: item.at,
+            item
+        })),
+        ...(instFollowups || []).map(f => ({
+            isFollowup: true,
+            sortKey: f.sortKey,
+            followup: f
+        }))
+    ].sort((a, b) => compareAutoTransferItems(a.sortKey, b.sortKey));
 
     if (selectAllWrap) selectAllWrap.classList.toggle('hidden', pendingItems.length === 0);
     const selectAllChk = document.getElementById('atSelectAllChk');
     if (selectAllChk) selectAllChk.checked = false;
 
-    if (dueItems.length === 0) {
+    if (pendingItems.length === 0 && appliedEntries.length === 0) {
         container.innerHTML = `<div class="bg-white p-8 rounded-2xl border border-orange-100 text-center text-xs text-gray-400">이번 달에 예정된 정기 지출·이체 항목이 없습니다. 아래에서 새 항목을 등록해 보세요.</div>`;
         return;
     }
@@ -345,9 +441,40 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
     }
 
     let appliedHtml = '';
-    if (appliedItems.length > 0) {
-        const appliedSum = appliedItems.reduce((s, x) => s + (Number(x.applied.amount) || 0), 0);
-        const appliedCards = appliedItems.map(({ at, sched, applied, exp }) => {
+    if (appliedEntries.length > 0) {
+        const appliedSum = appliedEntries.reduce((s, entry) => {
+            return s + (entry.isFollowup ? entry.followup.displayAmount : entry.item.displayAmount);
+        }, 0);
+
+        const appliedCards = appliedEntries.map(entry => {
+            if (entry.isFollowup) {
+                const f = entry.followup;
+                const t = f.tx;
+                const shortOrig = f.originalDate ? f.originalDate.slice(2).replace(/-/g, '.') : '';
+                return `
+                    <div class="at-applied-card bg-gray-50 p-3.5 rounded-2xl border border-pink-200 flex flex-wrap justify-between items-center gap-3 text-xs opacity-90 hover:opacity-100 transition">
+                        <div class="space-y-1 min-w-[200px] flex-1">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[10px]">반영 완료</span>
+                                ${getOwnerBadgeHtml(t.user)}
+                                <span class="font-bold text-gray-800 text-sm">${escHtml(t.memo)}</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-pink-100 text-pink-800 font-bold">${f.instIndex}/${f.instMonths}회차</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold">할부 자동반영</span>
+                            </div>
+                            <div class="text-[11px] text-gray-500">
+                                ${f.displayDate} · ${escHtml(t.type)} (${escHtml(t.catMain)}${t.catSub ? '/' + escHtml(t.catSub) : ''}) · ${escHtml(getAssetLabel(t.method))} · 원결제 ${shortOrig}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2.5 ml-auto text-right">
+                            <div>
+                                <div class="font-bold text-sm text-gray-800 whitespace-nowrap">${f.displayAmount.toLocaleString()}원</div>
+                                <div class="text-[10px] text-gray-400 whitespace-nowrap">총 ${f.totalAmount.toLocaleString()}원</div>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            const { at, sched, applied, exp, displayAmount, totalAmount, instMonths } = entry.item;
             const b = getTypeBehavior(at.type);
             const isTr = (b === 'transfer' || b === 'voucher');
             const methodText = isTr ? `${getAssetLabel(at.method)} → ${getAssetLabel(at.targetAsset)}` : getAssetLabel(at.method);
@@ -367,8 +494,11 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
                         </div>
                     </div>
                     <div class="flex items-center gap-2.5 ml-auto">
-                        <span class="font-bold text-sm text-gray-800">${Number(applied.amount).toLocaleString()}원</span>
-                        <button onclick="cancelAutoTransferApply('${applied.id}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded-xl text-[11px] font-bold">반영 취소</button>
+                        <div class="text-right">
+                            <div class="font-bold text-sm text-gray-800 whitespace-nowrap">${displayAmount.toLocaleString()}원</div>
+                            ${instMonths > 1 ? `<div class="text-[10px] text-gray-400 whitespace-nowrap">총 ${totalAmount.toLocaleString()}원</div>` : ''}
+                        </div>
+                        <button onclick="cancelAutoTransferApply('${applied.id}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded-xl text-[11px] font-bold whitespace-nowrap">반영 취소</button>
                     </div>
                 </div>`;
         }).join('');
@@ -378,7 +508,7 @@ function renderAtMonthlyExecutionList(dueItems, ym) {
                 <div onclick="toggleAtAppliedSection()" class="at-applied-header flex justify-between items-center gap-2 px-3.5 py-2.5 bg-white hover:bg-gray-50 rounded-2xl border border-gray-200 cursor-pointer select-none transition">
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="px-2 py-0.5 rounded-lg bg-green-100 text-green-800 font-bold text-[11px] shrink-0">반영완료</span>
-                        <span class="text-xs font-bold text-gray-700 whitespace-nowrap">${appliedItems.length}건</span>
+                        <span class="text-xs font-bold text-gray-700 whitespace-nowrap">${appliedEntries.length}건</span>
                         <span class="text-[11px] text-gray-500 truncate">합계 ${appliedSum.toLocaleString()}원</span>
                     </div>
                     <span id="atAppliedToggleIcon" class="text-[11px] font-bold text-gray-500 shrink-0 whitespace-nowrap">${atAppliedSectionOpen ? '접기 ▲' : '펼치기 ▼'}</span>
@@ -475,7 +605,11 @@ function applySelectedAutoTransfers() {
 function cancelAutoTransferApply(txId) {
     const tx = db.transactions.find(t => t.id === txId);
     if (!tx) return;
-    if (!confirm(`'${tx.memo}' (${Number(tx.amount).toLocaleString()}원) 반영을 취소하고 가계부 내역에서 삭제하시겠습니까?`)) return;
+    const months = Number(tx.installmentMonths) || 1;
+    const msg = months > 1
+        ? `'${tx.memo}' (${months}개월 할부 · 총 ${Number(tx.amount).toLocaleString()}원) 반영을 취소하고 가계부 내역에서 모든 할부 회차를 삭제하시겠습니까?`
+        : `'${tx.memo}' (${Number(tx.amount).toLocaleString()}원) 반영을 취소하고 가계부 내역에서 삭제하시겠습니까?`;
+    if (!confirm(msg)) return;
     db.transactions = db.transactions.filter(t => t.id !== txId);
     db.cardEvents = db.cardEvents.filter(e => e.txId !== txId);
     saveDb();
